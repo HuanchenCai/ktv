@@ -1,6 +1,7 @@
 import { readFileSync, existsSync, copyFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { platform } from "node:os";
 import { z } from "zod";
 
 const ConfigSchema = z.object({
@@ -51,12 +52,19 @@ export function loadConfig(projectRoot?: string): Config {
   const raw = JSON.parse(readFileSync(configPath, "utf8"));
   const parsed = ConfigSchema.parse(raw);
 
+  // Auto-append .exe on Windows if the resolved path doesn't exist but .exe does.
+  let binaryPath = resolve(root, parsed.openlist.binary_path);
+  if (platform() === "win32" && !existsSync(binaryPath)) {
+    const withExe = binaryPath + ".exe";
+    if (existsSync(withExe)) binaryPath = withExe;
+  }
+
   return {
     ...parsed,
     openlist: {
       ...parsed.openlist,
       data_dir: resolve(root, parsed.openlist.data_dir),
-      binary_path: resolve(root, parsed.openlist.binary_path),
+      binary_path: binaryPath,
     },
     library_path: resolve(parsed.library_path),
   };

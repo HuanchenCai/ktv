@@ -7,7 +7,7 @@
  *   node scripts/fetch-openlist.mjs --force    (re-download even if present)
  *   node scripts/fetch-openlist.mjs windows-amd64   (explicit target)
  */
-import { mkdir, writeFile, chmod, rm, readdir, rename } from "node:fs/promises";
+import { mkdir, writeFile, chmod, rm, readdir, rename, copyFile } from "node:fs/promises";
 import { existsSync, createReadStream, createWriteStream } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -129,7 +129,16 @@ async function main() {
         `archive did not contain ${binaryName} — extracted tree: ${tmpRoot}`,
       );
     }
-    await rename(candidates[0], finalPath);
+    // rename fails across drives (EXDEV on Windows when tmp is C: and project on H:) — fall back to copy.
+    try {
+      await rename(candidates[0], finalPath);
+    } catch (err) {
+      if (err && err.code === "EXDEV") {
+        await copyFile(candidates[0], finalPath);
+      } else {
+        throw err;
+      }
+    }
     if (!isWin) await chmod(finalPath, 0o755);
     console.log(`[fetch] installed -> ${finalPath}`);
   } finally {

@@ -1,22 +1,61 @@
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { platform } from "node:os";
 
-// node-mpv has no TS types, CommonJS default export
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let MpvModule: any;
-
+/**
+ * node-mpv 1.x — constructor spawns mpv immediately (no .start() method).
+ * Methods relevant to us: load, command, getProperty, setProperty, pause,
+ * resume, stop, quit, volume. Events: started, stopped, paused, resumed.
+ */
 type MpvLike = {
-  start: () => Promise<void>;
-  load: (path: string, mode?: string) => Promise<void>;
-  stop: () => Promise<void>;
-  pause: () => Promise<void>;
-  resume: () => Promise<void>;
-  setProperty: (prop: string, val: unknown) => Promise<void>;
+  load: (path: string, mode?: string) => Promise<void> | void;
+  command: (cmd: string, args: unknown[]) => Promise<void> | void;
   getProperty: (prop: string) => Promise<unknown>;
-  command: (cmd: string, args: unknown[]) => Promise<void>;
-  addListener: (event: string, cb: (...a: unknown[]) => void) => void;
-  on: (event: string, cb: (...a: unknown[]) => void) => void;
-  quit: () => Promise<void>;
+  setProperty: (prop: string, value: unknown) => Promise<void> | void;
+  pause: () => void;
+  resume: () => void;
+  stop: () => void;
+  quit: () => void;
+  volume: (v: number) => void;
+  on: (event: string, cb: (...args: unknown[]) => void) => void;
 };
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let MpvCtor: any;
+
+function findMpvBinary(): string | null {
+  try {
+    const out = execSync(platform() === "win32" ? "where mpv" : "which mpv", {
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .split(/\r?\n/)[0]
+      .trim();
+    if (out && existsSync(out)) return out;
+  } catch {
+    /* not on PATH */
+  }
+  const candidates =
+    platform() === "win32"
+      ? [
+          "C:/Program Files/MPV Player/mpv.exe",
+          "C:/Program Files/mpv/mpv.exe",
+          "C:/Program Files (x86)/mpv/mpv.exe",
+          `${process.env.LOCALAPPDATA ?? ""}/Programs/mpv/mpv.exe`,
+        ]
+      : platform() === "darwin"
+        ? [
+            "/opt/homebrew/bin/mpv",
+            "/usr/local/bin/mpv",
+            "/Applications/mpv.app/Contents/MacOS/mpv",
+          ]
+        : ["/usr/bin/mpv", "/usr/local/bin/mpv"];
+  for (const c of candidates) {
+    if (c && existsSync(c)) return c;
+  }
+  return null;
+}
 
 export type MpvState = {
   current_file: string | null;
@@ -28,15 +67,13 @@ export type MpvState = {
 };
 
 /**
- * High-level wrapper around mpv via JSON IPC (node-mpv).
+ * High-level wrapper. Channel switch strategy:
+ *   Persistent labelled filter "@karaoke" carrying a pan= param.
+ *   To toggle we remove-then-add in place (no filter chain teardown, no pop).
  *
- * Channel switching strategy:
- *   We keep a persistent pan filter labelled "@karaoke". Toggling is done by
- *   af-command to rewrite the pan params — no filter chain teardown, no pop.
- *
- *   pan=stereo|c0=c0|c1=c0   -> both speakers play L (accompaniment if L=acc)
- *   pan=stereo|c0=c1|c1=c1   -> both speakers play R
- *   (no filter)              -> both channels mixed (= original + accompaniment)
+ *   pan=stereo|c0=c0|c1=c0   -> play left channel on both speakers
+ *   pan=stereo|c0=c1|c1=c1   -> play right channel on both speakers
+ *   (no filter)              -> stereo mix (original + accompaniment)
  */
 export class MpvController extends EventEmitter {
   private mpv: MpvLike | null = null;
@@ -59,31 +96,36 @@ export class MpvController extends EventEmitter {
 
   async start(): Promise<void> {
     if (this.ready) return;
-    if (!MpvModule) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+    if (!MpvCtor) {
       const mod = await import("node-mpv");
-      // node-mpv default export
-      MpvModule = (mod as { default?: unknown }).default ?? mod;
+      MpvCtor = (mod as { default?: unknown }).default ?? mod;
     }
+
+    const resolvedBinary = this.binaryPath || findMpvBinary();
+    if (!resolvedBinary) {
+      throw new Error(
+        "mpv binary not found. Install via `winget install shinchiro.mpv` or `brew install mpv`, or set config.mpv.binary_path.",
+      );
+    }
+    console.log(`[mpv] using binary ${resolvedBinary}`);
 
     const mpvOpts: Record<string, unknown> = {
       audio_only: false,
       auto_restart: true,
       verbose: false,
       debug: false,
+      binary: resolvedBinary,
     };
-    if (this.binaryPath) {
-      mpvOpts.binary = this.binaryPath;
-    }
 
     const mpvArgs: string[] = ["--keep-open=yes", "--idle=yes"];
     if (this.fullscreen) mpvArgs.push("--fullscreen");
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    this.mpv = new (MpvModule as any)(mpvOpts, mpvArgs) as MpvLike;
+    this.mpv = new (MpvCtor as any)(mpvOpts, mpvArgs) as MpvLike;
 
-    await this.mpv.start();
-    this.ready = true;
+    // node-mpv 1.x attaches the IPC socket asynchronously inside the ctor;
+    // give it a moment to wire up before we try to send commands.
+    await new Promise<void>((r) => setTimeout(r, 500));
 
     this.mpv.on("stopped", () => this.emit("track-ended"));
     this.mpv.on("started", () =>
@@ -91,60 +133,48 @@ export class MpvController extends EventEmitter {
     );
     this.mpv.on("resumed", () => this.emit("resumed"));
     this.mpv.on("paused", () => this.emit("paused"));
+    this.ready = true;
     console.log("[mpv] ready");
   }
 
   async loadFile(path: string, vocalChannel?: "L" | "R"): Promise<void> {
     if (!this.mpv) throw new Error("mpv not started");
-    // Reset filter before loading; we re-apply after load based on desired mode.
-    await this.removeKaraokeFilter().catch(() => {});
-    await this.mpv.load(path, "replace");
+    await Promise.resolve(this.removeKaraokeFilter()).catch(() => {});
+    await Promise.resolve(this.mpv.load(path, "replace"));
     this.currentChannel = "both";
     const defaultCh = vocalChannel ?? this.vocalChannelDefault;
-    // After load, switch to accompaniment mode by default (opposite of vocal).
+    // Default to accompaniment on load (opposite of vocal channel).
     const accompaniment: "L" | "R" = defaultCh === "L" ? "R" : "L";
     await this.setChannel(accompaniment);
   }
 
-  /**
-   * Switch between original / accompaniment / both.
-   *   "L" -> both speakers play left channel
-   *   "R" -> both speakers play right channel
-   *   "both" -> remove filter, play stereo mixed
-   */
   async setChannel(ch: "L" | "R" | "both"): Promise<void> {
     if (!this.mpv) throw new Error("mpv not started");
     if (ch === "both") {
-      await this.removeKaraokeFilter().catch(() => {});
+      await Promise.resolve(this.removeKaraokeFilter()).catch(() => {});
     } else {
       const pan =
-        ch === "L"
-          ? "stereo|c0=c0|c1=c0"
-          : "stereo|c0=c1|c1=c1";
+        ch === "L" ? "stereo|c0=c0|c1=c0" : "stereo|c0=c1|c1=c1";
       const filter = `@karaoke:lavfi=[pan=${pan}]`;
-      // Try update-in-place; fall back to add if not present yet.
       try {
-        await this.mpv.command("af", ["remove", "@karaoke"]);
+        await Promise.resolve(this.mpv.command("af", ["remove", "@karaoke"]));
       } catch {
-        /* first call, nothing to remove */
+        /* nothing to remove yet */
       }
-      await this.mpv.command("af", ["add", filter]);
+      await Promise.resolve(this.mpv.command("af", ["add", filter]));
     }
     this.currentChannel = ch;
     this.emit("channel-changed", { channel: ch });
   }
 
-  private async removeKaraokeFilter(): Promise<void> {
+  private removeKaraokeFilter(): Promise<void> | void {
     if (!this.mpv) return;
-    await this.mpv.command("af", ["remove", "@karaoke"]);
+    return Promise.resolve(this.mpv.command("af", ["remove", "@karaoke"]));
   }
 
-  /**
-   * Given the song's vocal_channel, toggle between "original" and "accompaniment".
-   *   vocal=L -> accompaniment is R
-   *   vocal=R -> accompaniment is L
-   */
-  async toggleVocal(vocalChannel: "L" | "R"): Promise<"original" | "accompaniment" | "both"> {
+  async toggleVocal(
+    vocalChannel: "L" | "R",
+  ): Promise<"original" | "accompaniment" | "both"> {
     const accompaniment: "L" | "R" = vocalChannel === "L" ? "R" : "L";
     if (this.currentChannel === accompaniment) {
       await this.setChannel(vocalChannel);
@@ -159,24 +189,24 @@ export class MpvController extends EventEmitter {
   }
 
   async pause(): Promise<void> {
-    if (!this.mpv) return;
-    await this.mpv.pause();
+    this.mpv?.pause();
   }
 
   async resume(): Promise<void> {
-    if (!this.mpv) return;
-    await this.mpv.resume();
+    this.mpv?.resume();
   }
 
   async seekTo(seconds: number): Promise<void> {
     if (!this.mpv) return;
-    await this.mpv.command("seek", [seconds, "absolute"]);
+    await Promise.resolve(
+      this.mpv.command("seek", [seconds, "absolute"]),
+    );
   }
 
   async setVolume(vol: number): Promise<void> {
     if (!this.mpv) return;
     const clamped = Math.max(0, Math.min(130, vol));
-    await this.mpv.setProperty("volume", clamped);
+    this.mpv.volume(clamped);
   }
 
   async replay(): Promise<void> {
@@ -185,8 +215,7 @@ export class MpvController extends EventEmitter {
   }
 
   async stop(): Promise<void> {
-    if (!this.mpv) return;
-    await this.mpv.stop();
+    this.mpv?.stop();
   }
 
   async getState(): Promise<Partial<MpvState>> {
@@ -215,7 +244,7 @@ export class MpvController extends EventEmitter {
   async shutdown(): Promise<void> {
     if (this.mpv) {
       try {
-        await this.mpv.quit();
+        this.mpv.quit();
       } catch {
         /* ignore */
       }
