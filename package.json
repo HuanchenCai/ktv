@@ -1,0 +1,38 @@
+{
+  "name": "ktv",
+  "version": "0.1.0",
+  "description": "Home karaoke: phone QR point-song, on-demand Baidu Netdisk download, mpv playback, original/accompaniment toggle.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "start": "tsx backend/src/index.ts",
+    "dev": "tsx watch backend/src/index.ts",
+    "build:web": "cd web && npm install && npm run build",
+    "install:all": "npm install && cd web && npm install",
+    "fetch:openlist": "node scripts/fetch-openlist.mjs",
+    "setup": "npm run install:all && npm run fetch:openlist && npm run build:web",
+    "test": "vitest run",
+    "typecheck": "tsc -p backend/tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fastify/static": "^7.0.4",
+    "@fastify/websocket": "^10.0.1",
+    "fastify": "^4.28.1",
+    "node-mpv": "^1.5.0",
+    "pinyin-pro": "^3.25.0",
+    "qrcode": "^1.5.4",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

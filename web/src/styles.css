@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-colors active:scale-95;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-white;
+  }
+  .btn-ghost {
+    @apply btn bg-panel text-white/80 hover:text-white;
+  }
+  .tab {
+    @apply flex-1 flex flex-col items-center py-2 text-xs text-muted;
+  }
+  .tab.active {
+    @apply text-accent;
+  }
+  .card {
+    @apply bg-panel rounded-xl p-3;
+  }
+  .input {
+    @apply w-full bg-panel rounded-lg px-4 py-3 outline-none text-white placeholder:text-muted focus:ring-2 focus:ring-accent;
+  }
+}

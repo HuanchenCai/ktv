@@ -3,6 +3,8 @@ dist/
 build/
 .env
 .env.local
+*.log
+data/
 
 # SQLite (runtime data)
 *.db

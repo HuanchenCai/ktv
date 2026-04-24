@@ -1,0 +1,22 @@
+{
+  "http_port": 8080,
+  "openlist": {
+    "port": 5244,
+    "data_dir": "./openlist-data",
+    "binary_path": "./bin/openlist",
+    "auto_spawn": true,
+    "api_token": ""
+  },
+  "library_path": "H:/ktv-library",
+  "baidu_root": "/baidu/KTV",
+  "mpv": {
+    "binary_path": "",
+    "start_paused": false,
+    "fullscreen": false
+  },
+  "scheduler": {
+    "prefetch_ahead": 2,
+    "poll_interval_ms": 500
+  },
+  "vocal_channel_default": "L"
+}
