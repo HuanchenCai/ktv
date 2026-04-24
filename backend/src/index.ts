@@ -8,6 +8,7 @@ import { loadConfig, projectRoot } from "./config.ts";
 import { openDb } from "./db.ts";
 import { OpenListClient } from "./openlist-client.ts";
 import { spawnOpenList, waitForOpenList } from "./openlist-spawner.ts";
+import type { OpenListProcess } from "./openlist-spawner.ts";
 import { MpvController } from "./mpv-controller.ts";
 import { Orchestrator } from "./queue-orchestrator.ts";
 import { Scanner } from "./scanner.ts";
@@ -29,9 +30,10 @@ async function main() {
   // --- OpenList subprocess --------------------------------------------------
 
   const openlistUrl = `http://localhost:${config.openlist.port}`;
+  let openlistProc: OpenListProcess | null = null;
   if (config.openlist.auto_spawn) {
     if (existsSync(config.openlist.binary_path)) {
-      spawnOpenList({
+      openlistProc = spawnOpenList({
         binaryPath: config.openlist.binary_path,
         dataDir: config.openlist.data_dir,
         port: config.openlist.port,
@@ -114,7 +116,13 @@ async function main() {
   await registerSongsRoutes(fastify, db);
   await registerQueueRoutes(fastify, orchestrator);
   await registerControlRoutes(fastify, orchestrator, mpv);
-  await registerAdminRoutes(fastify, scanner, openlist, config.http_port);
+  await registerAdminRoutes(
+    fastify,
+    scanner,
+    openlist,
+    config.http_port,
+    () => openlistProc?.getInitialPassword() ?? null,
+  );
   await registerWs(fastify, orchestrator);
 
   fastify.get("/api/health", async () => {

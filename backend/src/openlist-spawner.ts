@@ -8,11 +8,18 @@ export type OpenListSpawnOptions = {
   port: number;
 };
 
+export type OpenListProcess = {
+  child: ChildProcess;
+  /** Initial admin password scraped from stdout on first run. `null` if not seen. */
+  getInitialPassword: () => string | null;
+};
+
 /**
  * Launch the bundled OpenList Go binary as a child process.
- * Returns the ChildProcess so the caller can cleanup on SIGTERM.
+ * Scrapes the initial admin password from stdout on first run so the admin UI
+ * can surface it to the user.
  */
-export function spawnOpenList(opts: OpenListSpawnOptions): ChildProcess {
+export function spawnOpenList(opts: OpenListSpawnOptions): OpenListProcess {
   const { binaryPath, dataDir, port } = opts;
   if (!existsSync(binaryPath)) {
     throw new Error(
@@ -27,23 +34,34 @@ export function spawnOpenList(opts: OpenListSpawnOptions): ChildProcess {
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
-      // OpenList reads config from its data dir; port override happens via its
-      // generated config.json on first run. For first run we leave the default
-      // 5244 — user can adjust in OpenList admin UI later.
     },
   });
 
-  child.stdout?.on("data", (chunk: Buffer) => {
-    process.stdout.write(`[openlist] ${chunk.toString()}`);
-  });
-  child.stderr?.on("data", (chunk: Buffer) => {
-    process.stderr.write(`[openlist] ${chunk.toString()}`);
-  });
+  let initialPassword: string | null = null;
+
+  const pwRegex =
+    /initial password is[:\s]+([A-Za-z0-9!@#$%^&*()_+=\-]{6,32})/i;
+
+  const handleOutput = (chunk: Buffer, isErr: boolean) => {
+    const text = chunk.toString();
+    (isErr ? process.stderr : process.stdout).write(`[openlist] ${text}`);
+    if (!initialPassword) {
+      const m = text.match(pwRegex);
+      if (m) {
+        initialPassword = m[1];
+        console.log(
+          `[openlist] captured initial admin password (${initialPassword.length} chars)`,
+        );
+      }
+    }
+  };
+
+  child.stdout?.on("data", (c: Buffer) => handleOutput(c, false));
+  child.stderr?.on("data", (c: Buffer) => handleOutput(c, true));
   child.on("exit", (code, signal) => {
     console.log(`[openlist] exited code=${code} signal=${signal}`);
   });
 
-  // Best-effort cleanup
   const cleanup = () => {
     if (!child.killed) child.kill("SIGTERM");
   };
@@ -54,7 +72,10 @@ export function spawnOpenList(opts: OpenListSpawnOptions): ChildProcess {
   console.log(
     `[openlist] spawned pid=${child.pid}; admin UI at http://localhost:${port}`,
   );
-  return child;
+  return {
+    child,
+    getInitialPassword: () => initialPassword,
+  };
 }
 
 /**

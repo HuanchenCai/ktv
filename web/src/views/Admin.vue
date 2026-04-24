@@ -12,6 +12,7 @@ const health = ref<{
   db_cached: number;
 } | null>(null);
 const qr = ref<{ url: string; qr_data_url: string; lan_ips: string[] } | null>(null);
+const initialPassword = ref<string | null>(null);
 const scanResult = ref<string>("");
 const scanning = ref(false);
 const error = ref("");
@@ -20,6 +21,8 @@ async function refresh() {
   try {
     health.value = await api.health();
     qr.value = await api.qr();
+    const status = await fetch("/api/admin/openlist-status").then((r) => r.json());
+    initialPassword.value = status.initial_password ?? null;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   }
@@ -65,6 +68,16 @@ async function runScan() {
           </a>
         </div>
         <div class="text-xs text-muted">存储路径：{{ health.library_path }}</div>
+      </div>
+    </div>
+
+    <div v-if="initialPassword" class="card space-y-1 border border-accent/30">
+      <div class="font-semibold text-accent">OpenList 初始管理员密码</div>
+      <div class="text-xs text-muted">
+        只在本次启动展示。用户名 admin，登录后请修改密码。
+      </div>
+      <div class="font-mono bg-black/40 rounded px-3 py-2 select-all">
+        {{ initialPassword }}
       </div>
     </div>
 

@@ -9,20 +9,32 @@ export async function registerAdminRoutes(
   scanner: Scanner,
   openlist: OpenListClient,
   http_port: number,
+  getOpenlistInitialPassword: () => string | null = () => null,
 ): Promise<void> {
   fastify.post<{ Body: { max_depth?: number } }>(
     "/api/admin/scan",
-    async (req) => {
-      const result = await scanner.scan({
-        maxDepth: req.body?.max_depth ?? 3,
-      });
-      return result;
+    async (req, rep) => {
+      try {
+        const result = await scanner.scan({
+          maxDepth: req.body?.max_depth ?? 3,
+        });
+        return result;
+      } catch (err) {
+        return rep.code(500).send({
+          error: err instanceof Error ? err.message : String(err),
+          hint:
+            "check config.json.baidu_root and that OpenList has the Baidu storage configured + api_token is set",
+        });
+      }
     },
   );
 
   fastify.get("/api/admin/openlist-status", async () => {
     const alive = await openlist.ping();
-    return { alive };
+    return {
+      alive,
+      initial_password: getOpenlistInitialPassword(),
+    };
   });
 
   fastify.get("/api/admin/qrcode", async () => {
