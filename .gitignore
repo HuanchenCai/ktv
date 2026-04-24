@@ -27,4 +27,10 @@ Thumbs.db
 
 # Local OpenList/runtime state
 .openlist/
+openlist-data/
 library/
+bin/
+config.json
+
+# Claude Code local settings (per-machine)
+.claude/settings.local.json

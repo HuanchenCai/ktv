@@ -1,38 +1,64 @@
 # KTV 家庭点歌系统
 
-手机扫码点歌 → 百度盘按需下载 → NAS 落盘 → MacBook 播放 → 电视显示 + Soundbar 出声。
+手机扫码点歌 → 百度盘按需下载 → 本地存储 → mpv 播放 → 电视显示 + 音响出伴奏。
 
-完整设计见 [计划文件](../../Users/huanc/.claude/plans/floating-baking-snail.md)。
+**架构**：单个本地 Node.js 应用管一切（backend + OpenList + mpv），NAS 可选充当存储。适合个人用，也适合打包后分享给其他人。
+
+完整设计见 [实施方案](../../Users/huanc/.claude/plans/floating-baking-snail.md)。
 
 ## 当前状态
 
-**M0 Brown M&M** — 手工验证最高风险路径，**尚未完成**。下面的 runbook 是必须先走一遍的步骤。
+**M0 Brown M&M** — 手工验证最高风险路径，**尚未完成**。业务代码写前先跑通下面这个 runbook。
 
-## M0 Runbook（你手工执行）
+## 硬件/软件需求
 
-目标：用最小动作证明三件事能跑，之后再写任何业务代码才有意义。
+- **本机**：Mac（M 系列最稳）或 Windows PC，放在电视旁
+- **电视 / 音响**：任意 HDMI 输入，或 AirPlay 2 接收
+- **麦克风**：带自己音响的那种（零延迟监听）
+- **手机**：任意带浏览器的手机
+- **百度盘 SVIP** 账号（你自己的曲库）
+- **mpv**：本机装好（Win: `winget install shinchiro.mpv`；Mac: `brew install mpv`）
+- **存储**：~500 GB 本地磁盘 / SMB 挂载的 NAS（用户选）
 
-### 准备
+## M0 Runbook（手工验证）
 
-在 NAS 上（SSH 进去）：
+目标：用最小动作证明三件事能跑，之后再写任何业务代码才有意义。**全部在本机（Windows 或 Mac）跑，不用 NAS、不用 Docker。**
+
+### 准备 OpenList 二进制
+
+从 https://github.com/OpenListTeam/OpenList/releases/latest 下载对应平台：
+
+- **Windows x64**：`openlist-windows-amd64.zip`
+- **Mac Apple Silicon（M1/M2/M3/M4）**：`openlist-darwin-arm64.tar.gz`
+- **Mac Intel**：`openlist-darwin-amd64.tar.gz`
+
+解压到项目目录 `bin/` 下：
 
 ```bash
-sudo mkdir -p /volume1/docker/ktv/{openlist,library,backend}
-sudo chown -R 1000:1000 /volume1/docker/ktv
+mkdir -p H:/Projects/KTV/bin
+# 把解压出来的 openlist.exe 或 openlist 放进 H:/Projects/KTV/bin/
 ```
 
-把这个项目的 `docker-compose.yml` 放到 NAS 上（或在 UGOS 容器管理器 → Compose 直接粘贴），起 OpenList：
+### 启动 OpenList
 
+**Windows cmd**：
+```cmd
+cd /d H:\Projects\KTV\bin
+openlist.exe server --data ..\openlist-data
+```
+
+**Mac / Linux**：
 ```bash
-docker compose up -d openlist
-docker logs ktv-openlist 2>&1 | grep -i "password\|admin"
+cd H:/Projects/KTV/bin
+chmod +x ./openlist
+./openlist server --data ../openlist-data
 ```
 
-首次启动会打印随机初始管理员密码，记下来。
+首次启动会在日志里打印初始管理员密码，记下来。
 
-### 配置 OpenList 两个存储
+浏览器打开 http://localhost:5244，用户名 `admin` + 刚才那个密码登录。
 
-浏览器打开 `http://<NAS IP>:5244`，用 `admin` + 上面那个密码登录。
+### 配置两个存储
 
 **存储 1：百度盘（源，只读）**
 
@@ -47,34 +73,43 @@ docker logs ktv-openlist 2>&1 | grep -i "password\|admin"
 - 再加一个
 - 驱动：`Local`
 - 挂载路径：`/local`
-- Root folder path：`/library`（对应 Docker 里挂进来的 `/volume1/docker/ktv/library`）
+- Root folder path：指向你要下载 MV 的物理目录。例：
+  - 本地盘：`H:\ktv-library`（Windows）或 `/Users/你/ktv-library`（Mac）
+  - 挂载的 NAS：`Z:\KTV`（Windows SMB 盘符）或 `/Volumes/NAS/KTV`（Mac）
 - 保存
+
+在 OpenList 右上角用户菜单 → 我的 Token，复制 Token 备用。
 
 ### 测试 1：Baidu 在 Stockholm 的真实下载速度
 
 在 OpenList UI 里找一首你曲库里的 MV（~100 MB 左右的 MKV），记下它的完整路径，比如 `/baidu/KTV/魔幻力量/如果明天世界末日[MTV].mkv`。
 
-从任一终端发：
+**Windows cmd / PowerShell**：
+
+```powershell
+$TOKEN = "在这里粘贴你的 Token"
+
+# 触发 copy: 百度 -> 本地
+curl -X POST "http://localhost:5244/api/fs/copy" `
+  -H "Authorization: $TOKEN" `
+  -H "Content-Type: application/json" `
+  -d '{\"src_dir\": \"/baidu/KTV/魔幻力量\", \"dst_dir\": \"/local\", \"names\": [\"如果明天世界末日[MTV].mkv\"]}'
+
+# 每秒轮询一次进度
+while ($true) { curl -s "http://localhost:5244/api/task/copy/undone" -H "Authorization: $TOKEN"; Start-Sleep 1 }
+```
+
+**Mac / Linux bash**：
 
 ```bash
-NAS=<your-nas-ip>
-TOKEN=<从 OpenList 用户设置页拿到的 API token>
+TOKEN="在这里粘贴你的 Token"
 
-# 触发 copy: 百度 → 本地
-curl -X POST "http://$NAS:5244/api/fs/copy" \
+curl -X POST "http://localhost:5244/api/fs/copy" \
   -H "Authorization: $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "src_dir": "/baidu/KTV/魔幻力量",
-    "dst_dir": "/local",
-    "names": ["如果明天世界末日[MTV].mkv"]
-  }'
+  -d '{"src_dir":"/baidu/KTV/魔幻力量","dst_dir":"/local","names":["如果明天世界末日[MTV].mkv"]}'
 
-# 拿到任务后轮询进度（每秒一次）
-while true; do
-  curl -s "http://$NAS:5244/api/task/copy/undone" -H "Authorization: $TOKEN" | jq .
-  sleep 1
-done
+while true; do curl -s "http://localhost:5244/api/task/copy/undone" -H "Authorization: $TOKEN"; sleep 1; done
 ```
 
 **记录下来：**
@@ -83,73 +118,71 @@ done
 - [ ] 文件大小：____ MB
 - [ ] 平均速度：____ MB/s
 - [ ] `progress` 字段是否平滑增长（不是 0 跳 100）？y / n
-- [ ] 下到 NAS 后在 `/volume1/docker/ktv/library/` 里能看到文件？y / n
+- [ ] 下到目标目录后能看到文件？y / n
 
-**及格线：平均 ≥ 5 MB/s，progress 平滑。** 低于这个要考虑 HK/SG 中转 VPS。
+**及格线：平均 ≥ 5 MB/s，progress 平滑。** 低于这个考虑 HK/SG 中转 VPS。
 
-### 测试 2：MacBook mpv 运行时切声道无爆音
-
-把下好的那个 MKV scp 到 Mac：
+### 测试 2：mpv 运行时切声道无爆音
 
 ```bash
-scp <nas-user>@<nas-ip>:/volume1/docker/ktv/library/如果明天世界末日*.mkv ~/Desktop/
+# Windows
+mpv H:\ktv-library\如果明天世界末日*.mkv
+
+# Mac
+mpv ~/ktv-library/如果明天世界末日*.mkv
 ```
 
-Mac 上装工具：
+视频开始后听清楚当前状态（双声道 = 原唱 + 伴奏混合）。
 
-```bash
-brew install mpv socat
+**在 mpv 窗口里按反引号 `` ` `` 打开控制台**，输入（不带引号）：
+
+```
+af add @karaoke:lavfi=[pan=stereo|c0=c0|c1=c0]
 ```
 
-一个终端起 mpv（带 IPC socket）：
+回车 → 只剩左声道（双喇叭播 L）。再输入：
 
-```bash
-mpv --input-ipc-server=/tmp/mpvsocket ~/Desktop/如果明天世界末日*.mkv
+```
+af remove @karaoke
+af add @karaoke:lavfi=[pan=stereo|c0=c1|c1=c1]
 ```
 
-视频开始后听清楚现在的状态（双声道 = 原唱 + 伴奏）。
-
-另一个终端发切声道命令：
-
-```bash
-# 只听左声道（假设是伴奏）
-echo '{"command": ["af", "add", "@karaoke:lavfi=[pan=stereo|c0=c0|c1=c0]"]}' | socat - /tmp/mpvsocket
-
-# 切到只听右声道（假设是原唱）
-echo '{"command": ["af", "remove", "@karaoke"]}' | socat - /tmp/mpvsocket
-echo '{"command": ["af", "add", "@karaoke:lavfi=[pan=stereo|c0=c1|c1=c1]"]}' | socat - /tmp/mpvsocket
-
-# 回到双声道（移除 filter）
-echo '{"command": ["af", "remove", "@karaoke"]}' | socat - /tmp/mpvsocket
-```
+回车 → 只剩右声道（双喇叭播 R）。最后 `af remove @karaoke` 回到双声道。
 
 **记录下来：**
 
-- [ ] 切换时有没有"咔哒"爆音？
-- [ ] 哪边是原唱、哪边是伴奏？（记下这首的 vocal_channel 约定）
+- [ ] 切换瞬间有"咔哒"爆音？y / n
+- [ ] 哪边是原唱、哪边是伴奏？（记下 vocal_channel 约定，例："B'in MUSIC 发行 = L 伴奏 R 原唱"）
 
-**及格线：切换无明显爆音。** 有爆音需要改方案（双 mpv crossfade）。
+**及格线：切换无明显爆音。** 有爆音需改方案（双 mpv 实例 crossfade）。
 
-### 测试 3：AirPlay 全路径体感
+### 测试 3：AirPlay / HDMI 全链路体感（Mac 上做，Windows 跳过）
 
-MacBook 上 AirPlay 投屏到电视（QN700B 原生支持）或 Apple TV；电视声音走 eARC 到 HW-S810B Soundbar。拿麦克风唱两句你熟悉的歌，确认：
+Mac 上 AirPlay 到电视（QN700B 原生支持）或 Apple TV；电视声音走 eARC 到 Soundbar。拿麦克风唱你熟悉的歌两句，确认：
 
-- [ ] 能跟得上伴奏、不觉得拍子错位（详见 memory: `feedback_latency_karaoke.md`，应该不会错位）
-- [ ] 电视 MV + 歌词虽然晚 ~300 ms 但不妨碍唱
+- [ ] 能跟得上伴奏、不觉得拍子错位（详见 memory: `feedback_latency_karaoke.md`）
+- [ ] MV 画面/歌词延迟可以接受
 
 ## M0 完成后
 
-把三项结果填回来，我再根据数据启动 M1（backend + player 代码）。如果测试 1 不及格要先改方案；测试 2 不及格要换播放策略；测试 3 只是体感验证。
+三项结果填回来，我根据数据启动 M1（backend 脚手架 + node-mpv 控制 + openlist 子进程编排）。任一项不及格前要先改方案。
 
 ## 后续里程碑
 
-见 [计划文件](../../Users/huanc/.claude/plans/floating-baking-snail.md) §里程碑 M1–M4。
+见 [实施方案](../../Users/huanc/.claude/plans/floating-baking-snail.md) §里程碑 M1–M4。
 
 ## 目录结构
 
 ```
-├── docker-compose.yml    # OpenList（M0+）、backend（M1+ 启用）
-├── backend/              # Node 20 + Fastify（M1 开始填）
-├── web/                  # Vue 3 + Vite（M2 开始填）
-└── player/               # Python + mpv（M1 开始填）
+├── README.md                  # 这个文件，含 M0 runbook
+├── package.json               # (M1 起) 根 Node 项目
+├── config.example.json        # (M1 起) 配置模板
+├── scripts/                   # (M1 起) 启动脚本 + OpenList 下载脚本
+├── bin/                       # OpenList 二进制放这（gitignored）
+├── backend/                   # Node 20 + Fastify + node-mpv
+└── web/                       # Vue 3 + Vite 手机前端
 ```
+
+## 许可
+
+（待定）
