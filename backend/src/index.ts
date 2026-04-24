@@ -122,6 +122,8 @@ async function main() {
     openlist,
     config.http_port,
     () => openlistProc?.getInitialPassword() ?? null,
+    db,
+    config.library_path,
   );
   await registerWs(fastify, orchestrator);
 

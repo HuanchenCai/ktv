@@ -15,6 +15,8 @@ const qr = ref<{ url: string; qr_data_url: string; lan_ips: string[] } | null>(n
 const initialPassword = ref<string | null>(null);
 const scanResult = ref<string>("");
 const scanning = ref(false);
+const importResult = ref<string>("");
+const importing = ref(false);
 const error = ref("");
 
 async function refresh() {
@@ -41,6 +43,20 @@ async function runScan() {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
     scanning.value = false;
+  }
+}
+
+async function runImportLocal() {
+  importing.value = true;
+  error.value = "";
+  try {
+    const r = await api.importLocal();
+    importResult.value = `扫 ${r.scanned} 个文件，入库 ${r.added}，跳过 ${r.skipped}`;
+    await refresh();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    importing.value = false;
   }
 }
 </script>
@@ -97,12 +113,31 @@ async function runScan() {
     <div class="card space-y-2">
       <div class="font-semibold">扫百度盘入库</div>
       <div class="text-xs text-muted">
-        首次点一下把曲库目录扫描入索引。支持增量，可以反复点。
+        首次点一下把百度盘曲库目录扫描入索引。需先在 OpenList 里配好
+        Baidu 存储和 api_token（config.json）。支持增量，可以反复点。
       </div>
       <button class="btn-primary" :disabled="scanning" @click="runScan">
         {{ scanning ? "扫描中..." : "开始扫描" }}
       </button>
       <div v-if="scanResult" class="text-sm text-green-400">{{ scanResult }}</div>
+    </div>
+
+    <div class="card space-y-2">
+      <div class="font-semibold">导入本地已有 MKV（调试用）</div>
+      <div class="text-xs text-muted">
+        扫描 library_path 下的 .mkv/.mp4 文件，直接标记为"已缓存"入库。
+        绕过百度盘配置快速验证播放/切声道。
+      </div>
+      <button
+        class="btn-ghost"
+        :disabled="importing"
+        @click="runImportLocal"
+      >
+        {{ importing ? "导入中..." : "导入本地文件" }}
+      </button>
+      <div v-if="importResult" class="text-sm text-green-400">
+        {{ importResult }}
+      </div>
     </div>
 
     <div v-if="error" class="text-red-400 text-sm">{{ error }}</div>

@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import type { Scanner } from "../scanner.ts";
 import type { OpenListClient } from "../openlist-client.ts";
+import type { Db } from "../db.ts";
+import { importLocalLibrary } from "../local-importer.ts";
 import QRCode from "qrcode";
 import { networkInterfaces } from "node:os";
 
@@ -10,6 +12,8 @@ export async function registerAdminRoutes(
   openlist: OpenListClient,
   http_port: number,
   getOpenlistInitialPassword: () => string | null = () => null,
+  db?: Db,
+  libraryPath?: string,
 ): Promise<void> {
   fastify.post<{ Body: { max_depth?: number } }>(
     "/api/admin/scan",
@@ -46,6 +50,18 @@ export async function registerAdminRoutes(
       width: 256,
     });
     return { url, qr_data_url: dataUrl, lan_ips: lanIps };
+  });
+
+  /**
+   * Add any local MKV/MP4 files in library_path as already-cached songs.
+   * Bypass for smoke-testing playback without Baidu configuration.
+   */
+  fastify.post("/api/admin/import-local", async (req, rep) => {
+    if (!db || !libraryPath) {
+      return rep.code(500).send({ error: "import-local not wired up" });
+    }
+    const result = await importLocalLibrary(db, libraryPath);
+    return result;
   });
 }
 

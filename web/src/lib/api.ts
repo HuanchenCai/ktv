@@ -150,4 +150,10 @@ export const api = {
       },
     );
   },
+  importLocal() {
+    return request<{ added: number; skipped: number; scanned: number }>(
+      "/api/admin/import-local",
+      { method: "POST" },
+    );
+  },
 };
