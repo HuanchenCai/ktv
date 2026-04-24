@@ -2,9 +2,15 @@
 import { onMounted, ref } from "vue";
 import { api } from "../lib/api";
 
-const health = ref<{ ok: boolean; openlist_up: boolean; db_songs: number } | null>(
-  null,
-);
+const health = ref<{
+  ok: boolean;
+  openlist_up: boolean;
+  openlist_admin_url: string;
+  mpv_ready: boolean;
+  library_path: string;
+  db_songs: number;
+  db_cached: number;
+} | null>(null);
 const qr = ref<{ url: string; qr_data_url: string; lan_ips: string[] } | null>(null);
 const scanResult = ref<string>("");
 const scanning = ref(false);
@@ -41,13 +47,24 @@ async function runScan() {
     <div class="card space-y-2">
       <div class="font-semibold">状态</div>
       <div v-if="health" class="text-sm space-y-1">
-        <div>曲库：{{ health.db_songs }} 首</div>
+        <div>
+          曲库：{{ health.db_songs }} 首（已缓存 {{ health.db_cached }}）
+        </div>
         <div>
           OpenList：
           <span :class="health.openlist_up ? 'text-green-400' : 'text-red-400'">
             {{ health.openlist_up ? "在线" : "未连接" }}
           </span>
+          <a
+            v-if="health.openlist_up"
+            :href="health.openlist_admin_url"
+            target="_blank"
+            class="text-xs text-accent ml-2"
+          >
+            打开管理界面 ↗
+          </a>
         </div>
+        <div class="text-xs text-muted">存储路径：{{ health.library_path }}</div>
       </div>
     </div>
 

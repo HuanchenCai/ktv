@@ -117,11 +117,25 @@ async function main() {
   await registerAdminRoutes(fastify, scanner, openlist, config.http_port);
   await registerWs(fastify, orchestrator);
 
-  fastify.get("/api/health", async () => ({
-    ok: true,
-    openlist_up: await openlist.ping(),
-    db_songs: (db.prepare("SELECT COUNT(*) AS c FROM songs").get() as { c: number }).c,
-  }));
+  fastify.get("/api/health", async () => {
+    const songCount = (
+      db.prepare("SELECT COUNT(*) AS c FROM songs").get() as { c: number }
+    ).c;
+    const cachedCount = (
+      db
+        .prepare("SELECT COUNT(*) AS c FROM songs WHERE cached = 1")
+        .get() as { c: number }
+    ).c;
+    return {
+      ok: true,
+      openlist_up: await openlist.ping(),
+      openlist_admin_url: openlistUrl,
+      mpv_ready: !!config.mpv.binary_path || true, // controller warns if unavailable
+      library_path: config.library_path,
+      db_songs: songCount,
+      db_cached: cachedCount,
+    };
+  });
 
   try {
     await fastify.listen({ port: config.http_port, host: "0.0.0.0" });

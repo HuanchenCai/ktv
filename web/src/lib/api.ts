@@ -126,9 +126,15 @@ export const api = {
     }>("/api/player");
   },
   health() {
-    return request<{ ok: boolean; openlist_up: boolean; db_songs: number }>(
-      "/api/health",
-    );
+    return request<{
+      ok: boolean;
+      openlist_up: boolean;
+      openlist_admin_url: string;
+      mpv_ready: boolean;
+      library_path: string;
+      db_songs: number;
+      db_cached: number;
+    }>("/api/health");
   },
   qr() {
     return request<{ url: string; qr_data_url: string; lan_ips: string[] }>(

@@ -1,6 +1,32 @@
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
 import { resolve, dirname } from "node:path";
 import { mkdirSync } from "node:fs";
+
+// Vite 5 mishandles `import ... from "node:sqlite"` (strips the scheme and
+// then can't find bare "sqlite"). Fall back to CommonJS require — node:sqlite
+// is a built-in since Node 22 (stable in 24+).
+const nodeRequire = createRequire(import.meta.url);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const { DatabaseSync } = nodeRequire("node:sqlite") as {
+  DatabaseSync: new (path: string) => DatabaseSyncInstance;
+};
+
+type DatabaseSyncInstance = {
+  exec: (sql: string) => void;
+  prepare: (sql: string) => StatementSyncInstance;
+  close: () => void;
+};
+type StatementSyncInstance = {
+  run: (
+    ...params: Array<string | number | bigint | Buffer | null>
+  ) => { changes: number; lastInsertRowid: number | bigint };
+  get: (
+    ...params: Array<string | number | bigint | Buffer | null>
+  ) => Record<string, unknown> | undefined;
+  all: (
+    ...params: Array<string | number | bigint | Buffer | null>
+  ) => Array<Record<string, unknown>>;
+};
 
 /**
  * We use Node 22+ built-in node:sqlite (stable in Node 24).
@@ -89,12 +115,20 @@ CREATE INDEX IF NOT EXISTS idx_dl_status ON download_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_dl_song ON download_tasks(song_id);
 `;
 
-export type Db = DatabaseSync;
+export type Db = DatabaseSyncInstance;
 
 export function openDb(filePath: string): Db {
   mkdirSync(dirname(resolve(filePath)), { recursive: true });
   const db = new DatabaseSync(resolve(filePath));
   db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA foreign_keys = ON");
+  db.exec(SCHEMA);
+  return db;
+}
+
+/** Open an in-memory DB; used by tests. */
+export function openInMemoryDb(): Db {
+  const db = new DatabaseSync(":memory:");
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(SCHEMA);
   return db;
