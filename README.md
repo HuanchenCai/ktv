@@ -6,182 +6,150 @@
 
 完整设计见 [实施方案](../../Users/huanc/.claude/plans/floating-baking-snail.md)。
 
-## 当前状态
+## 快速开始
 
-**M0 Brown M&M** — 手工验证最高风险路径，**尚未完成**。业务代码写前先跑通下面这个 runbook。
+### 0. 前置
 
-## 硬件/软件需求
+- **Node 22+**（本项目用 Node 24 里内置的 `node:sqlite`，免 VS 编译）
+- **mpv**：Windows `winget install shinchiro.mpv`，Mac `brew install mpv`
+- **百度盘 SVIP 账号**（你自己的 KTV 曲库所在账号）
 
-- **本机**：Mac（M 系列最稳）或 Windows PC，放在电视旁
-- **电视 / 音响**：任意 HDMI 输入，或 AirPlay 2 接收
-- **麦克风**：带自己音响的那种（零延迟监听）
-- **手机**：任意带浏览器的手机
-- **百度盘 SVIP** 账号（你自己的曲库）
-- **mpv**：本机装好（Win: `winget install shinchiro.mpv`；Mac: `brew install mpv`）
-- **存储**：~500 GB 本地磁盘 / SMB 挂载的 NAS（用户选）
-
-## M0 Runbook（手工验证）
-
-目标：用最小动作证明三件事能跑，之后再写任何业务代码才有意义。**全部在本机（Windows 或 Mac）跑，不用 NAS、不用 Docker。**
-
-### 准备 OpenList 二进制
-
-从 https://github.com/OpenListTeam/OpenList/releases/latest 下载对应平台：
-
-- **Windows x64**：`openlist-windows-amd64.zip`
-- **Mac Apple Silicon（M1/M2/M3/M4）**：`openlist-darwin-arm64.tar.gz`
-- **Mac Intel**：`openlist-darwin-amd64.tar.gz`
-
-解压到项目目录 `bin/` 下：
+### 1. 安装 + 拉 OpenList + 打包 web
 
 ```bash
-mkdir -p H:/Projects/KTV/bin
-# 把解压出来的 openlist.exe 或 openlist 放进 H:/Projects/KTV/bin/
+cd H:/Projects/KTV
+npm run setup
 ```
 
-### 启动 OpenList
+干了三件事：装 node 依赖、下载 OpenList 二进制到 `bin/`、打包 Vue 前端到 `web/dist/`。
 
-**Windows cmd**：
-```cmd
-cd /d H:\Projects\KTV\bin
-openlist.exe server --data ..\openlist-data
-```
+### 2. 启动
 
-**Mac / Linux**：
 ```bash
-cd H:/Projects/KTV/bin
-chmod +x ./openlist
-./openlist server --data ../openlist-data
+npm start
 ```
 
-首次启动会在日志里打印初始管理员密码，记下来。
+启动时会：
+- 从 `config.example.json` 拷贝一份 `config.json`（如果还没有）
+- 拉起 OpenList 子进程（:5244）
+- 拉起 mpv 子进程
+- Fastify 监听 :8080，同时 serve 手机 Web UI
 
-浏览器打开 http://localhost:5244，用户名 `admin` + 刚才那个密码登录。
+日志里会看到：
 
-### 配置两个存储
+```
+[openlist] Successfully created the admin user and the initial password is: XXXXXXXX
+```
 
-**存储 1：百度盘（源，只读）**
+**这个密码记下来**（首次启动才打印一次），下一步要用。
 
+### 3. 配置 OpenList（一次性）
+
+浏览器打开 http://localhost:5244，用 `admin` + 上面的密码登录。
+
+**加两个存储：**
+
+**存储 1：百度盘（只读源）**
 - 管理 → 存储 → 添加
-- 驱动：`BaiduNetdisk` 或 `Baidu.OnlineAPI`（推荐后者，OAuth 免 cookie）
+- 驱动：`BaiduNetdisk` 或 `Baidu.OnlineAPI`（推荐 OAuth，免 cookie）
 - 挂载路径：`/baidu`
-- 按页面指引扫码授权你的百度账号（SVIP）
-- 保存
+- 按指引扫码登录你的百度账号（SVIP）
 
-**存储 2：本地（目标，可写）**
-
+**存储 2：本地（可写目标）**
 - 再加一个
 - 驱动：`Local`
 - 挂载路径：`/local`
-- Root folder path：指向你要下载 MV 的物理目录。例：
-  - 本地盘：`H:\ktv-library`（Windows）或 `/Users/你/ktv-library`（Mac）
-  - 挂载的 NAS：`Z:\KTV`（Windows SMB 盘符）或 `/Volumes/NAS/KTV`（Mac）
-- 保存
+- Root folder path：填 `config.json` 里 `library_path` 对应的**本地真实路径**，例如 `H:\ktv-library` 或 `Z:\KTV`（挂载的 NAS）
 
-在 OpenList 右上角用户菜单 → 我的 Token，复制 Token 备用。
+**拿 API token：** OpenList 右上角用户菜单 → 我的 → 我的 Token，复制。
 
-### 测试 1：Baidu 在 Stockholm 的真实下载速度
+### 4. 填 config.json
 
-在 OpenList UI 里找一首你曲库里的 MV（~100 MB 左右的 MKV），记下它的完整路径，比如 `/baidu/KTV/魔幻力量/如果明天世界末日[MTV].mkv`。
+编辑 `H:/Projects/KTV/config.json`：
 
-**Windows cmd / PowerShell**：
-
-```powershell
-$TOKEN = "在这里粘贴你的 Token"
-
-# 触发 copy: 百度 -> 本地
-curl -X POST "http://localhost:5244/api/fs/copy" `
-  -H "Authorization: $TOKEN" `
-  -H "Content-Type: application/json" `
-  -d '{\"src_dir\": \"/baidu/KTV/魔幻力量\", \"dst_dir\": \"/local\", \"names\": [\"如果明天世界末日[MTV].mkv\"]}'
-
-# 每秒轮询一次进度
-while ($true) { curl -s "http://localhost:5244/api/task/copy/undone" -H "Authorization: $TOKEN"; Start-Sleep 1 }
+```json
+{
+  "library_path": "H:/ktv-library",      // 或你的 NAS 盘符路径，如 "Z:/KTV"
+  "baidu_root": "/baidu/KTV",            // OpenList 里百度盘存储下你放 KTV 的子目录
+  "openlist": {
+    "api_token": "粘贴你刚才复制的 token"
+  }
+}
 ```
 
-**Mac / Linux bash**：
+重启 backend（Ctrl+C 然后 `npm start`）。
 
-```bash
-TOKEN="在这里粘贴你的 Token"
+### 5. 扫描曲库入索引
 
-curl -X POST "http://localhost:5244/api/fs/copy" \
-  -H "Authorization: $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"src_dir":"/baidu/KTV/魔幻力量","dst_dir":"/local","names":["如果明天世界末日[MTV].mkv"]}'
+浏览器打开 **http://localhost:8080/admin**（手机也能扫那上面的二维码），点"开始扫描"。等几秒到几分钟，曲库里所有 MV 的元数据（标题/艺人/拼音/大小）就进 SQLite 了。
 
-while true; do curl -s "http://localhost:5244/api/task/copy/undone" -H "Authorization: $TOKEN"; sleep 1; done
-```
+### 6. 开唱
 
-**记录下来：**
+手机扫 admin 页上的二维码（或直接访问 `http://<本机-LAN-IP>:8080`）：
+- **搜歌**页：拼音首字母（例 "zyn" → 只有你）
+- **已点**页：看队列 + 下载进度条 + 置顶/删除
+- **播放**页：原唱/伴唱、切歌、重唱、音量
 
-- [ ] Wall-clock 总耗时：____ 秒
-- [ ] 文件大小：____ MB
-- [ ] 平均速度：____ MB/s
-- [ ] `progress` 字段是否平滑增长（不是 0 跳 100）？y / n
-- [ ] 下到目标目录后能看到文件？y / n
-
-**及格线：平均 ≥ 5 MB/s，progress 平滑。** 低于这个考虑 HK/SG 中转 VPS。
-
-### 测试 2：mpv 运行时切声道无爆音
-
-```bash
-# Windows
-mpv H:\ktv-library\如果明天世界末日*.mkv
-
-# Mac
-mpv ~/ktv-library/如果明天世界末日*.mkv
-```
-
-视频开始后听清楚当前状态（双声道 = 原唱 + 伴奏混合）。
-
-**在 mpv 窗口里按反引号 `` ` `` 打开控制台**，输入（不带引号）：
-
-```
-af add @karaoke:lavfi=[pan=stereo|c0=c0|c1=c0]
-```
-
-回车 → 只剩左声道（双喇叭播 L）。再输入：
-
-```
-af remove @karaoke
-af add @karaoke:lavfi=[pan=stereo|c0=c1|c1=c1]
-```
-
-回车 → 只剩右声道（双喇叭播 R）。最后 `af remove @karaoke` 回到双声道。
-
-**记录下来：**
-
-- [ ] 切换瞬间有"咔哒"爆音？y / n
-- [ ] 哪边是原唱、哪边是伴奏？（记下 vocal_channel 约定，例："B'in MUSIC 发行 = L 伴奏 R 原唱"）
-
-**及格线：切换无明显爆音。** 有爆音需改方案（双 mpv 实例 crossfade）。
-
-### 测试 3：AirPlay / HDMI 全链路体感（Mac 上做，Windows 跳过）
-
-Mac 上 AirPlay 到电视（QN700B 原生支持）或 Apple TV；电视声音走 eARC 到 Soundbar。拿麦克风唱你熟悉的歌两句，确认：
-
-- [ ] 能跟得上伴奏、不觉得拍子错位（详见 memory: `feedback_latency_karaoke.md`）
-- [ ] MV 画面/歌词延迟可以接受
-
-## M0 完成后
-
-三项结果填回来，我根据数据启动 M1（backend 脚手架 + node-mpv 控制 + openlist 子进程编排）。任一项不及格前要先改方案。
-
-## 后续里程碑
-
-见 [实施方案](../../Users/huanc/.claude/plans/floating-baking-snail.md) §里程碑 M1–M4。
+第一次点一首没缓存的歌，backend 会通过 OpenList 从百度盘下载到 `library_path/`，下好自动播。重复点就秒播。
 
 ## 目录结构
 
 ```
-├── README.md                  # 这个文件，含 M0 runbook
-├── package.json               # (M1 起) 根 Node 项目
-├── config.example.json        # (M1 起) 配置模板
-├── scripts/                   # (M1 起) 启动脚本 + OpenList 下载脚本
-├── bin/                       # OpenList 二进制放这（gitignored）
-├── backend/                   # Node 20 + Fastify + node-mpv
-└── web/                       # Vue 3 + Vite 手机前端
+├── package.json / package-lock.json
+├── config.example.json        # 模板；运行时会自动拷一份成 config.json
+├── README.md                  # 本文件
+├── backend/                   # Node 20 + Fastify + node-mpv + node:sqlite
+│   ├── tsconfig.json
+│   └── src/
+│       ├── index.ts           # 入口，编排所有子进程
+│       ├── config.ts          # JSON 配置加载 + 路径推断
+│       ├── db.ts              # SQLite schema + withTransaction
+│       ├── pinyin.ts          # 汉字 → 每字首字母
+│       ├── openlist-client.ts # REST: fs/list, fs/copy, task/copy/*
+│       ├── openlist-spawner.ts# 起 OpenList 子进程
+│       ├── mpv-controller.ts  # node-mpv 封装，含 @karaoke 切声道
+│       ├── queue-orchestrator.ts  # 队列 + 下载调度 + 播放衔接
+│       ├── scanner.ts         # 扫百度盘入库
+│       ├── api/               # REST 路由
+│       └── ws.ts              # WebSocket 广播
+├── web/                       # Vue 3 + Vite + Tailwind 手机前端
+│   └── src/
+│       ├── App.vue            # 底部 tab 导航
+│       ├── views/             # Search / Queue / NowPlaying / Admin
+│       └── lib/               # api.ts / ws.ts
+├── scripts/
+│   ├── fetch-openlist.mjs     # 平台自识别下载 openlist 二进制
+│   ├── start.bat              # Windows 包装脚本（纯 ASCII）
+│   └── start.sh               # Mac/Linux 包装脚本
+├── bin/                       # openlist 二进制（gitignored）
+├── openlist-data/             # OpenList 自己的数据目录（gitignored）
+└── data/                      # SQLite 数据库落地（gitignored）
 ```
+
+## 开发命令
+
+```bash
+npm start                # 生产启动
+npm run dev              # backend watch 模式
+cd web && npm run dev    # web dev server (Vite), 代理到 :8080
+npm test                 # vitest 跑单元测试
+npm run typecheck        # TS 类型检查
+```
+
+## M0 Brown M&M 验证（可选，架构风险检查）
+
+如果你想在开干前先单独验证最高风险的三件事，见 [plan 里的 M0 章节](../../Users/huanc/.claude/plans/floating-baking-snail.md#里程碑)。
+核心三件事现在都被业务代码覆盖了，走完上面的快速开始流程就相当于跑了 M0。
+
+## 已知限制
+
+- **OpenList 的百度盘驱动可能被百度风控**，要备着 cookie/token 失效要重新登录。
+- **跨海外 IP 限速风险**：Stockholm 到百度服务器速度待实测。
+- **mpv 切声道依赖发行商约定**：B'in、雷石、视易 L/R 谁原唱谁伴奏不统一，UI 提供"这首 L/R 反了"按钮按首歌校正。
+
+## 后续里程碑
+
+见 [plan](../../Users/huanc/.claude/plans/floating-baking-snail.md) M2-M4。
 
 ## 许可
 
