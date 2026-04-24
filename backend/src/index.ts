@@ -149,8 +149,29 @@ async function main() {
 
   try {
     await fastify.listen({ port: config.http_port, host: "0.0.0.0" });
-    console.log(`[main] KTV backend on http://localhost:${config.http_port}`);
-    console.log(`[main] OpenList admin on ${openlistUrl}`);
+    const nets = (await import("node:os")).networkInterfaces();
+    const lan: string[] = [];
+    for (const ifaces of Object.values(nets)) {
+      for (const net of ifaces ?? []) {
+        if (net.family === "IPv4" && !net.internal) lan.push(net.address);
+      }
+    }
+    console.log("");
+    console.log("================================================");
+    console.log("  KTV is up.");
+    console.log(`    local:       http://localhost:${config.http_port}`);
+    if (lan.length) {
+      console.log(`    LAN (phone): http://${lan[0]}:${config.http_port}`);
+    }
+    console.log(`    admin:       http://localhost:${config.http_port}/admin`);
+    console.log(`    OpenList:    ${openlistUrl}`);
+    const pw = openlistProc?.getInitialPassword();
+    if (pw) {
+      console.log(`    OpenList initial admin password: ${pw}`);
+    }
+    console.log(`    library:     ${config.library_path}`);
+    console.log("================================================");
+    console.log("");
   } catch (err) {
     console.error(err);
     process.exit(1);
