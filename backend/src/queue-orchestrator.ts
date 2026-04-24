@@ -61,6 +61,9 @@ export class Orchestrator extends EventEmitter {
       this.currentChannelState = info.channel;
       this.broadcastPlayerState();
     });
+    this.mpv.on("paused", () => this.broadcastPlayerState());
+    this.mpv.on("resumed", () => this.broadcastPlayerState());
+    this.mpv.on("track-started", () => this.broadcastPlayerState());
   }
 
   start(): void {
