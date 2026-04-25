@@ -19,10 +19,10 @@ const ConfigSchema = z.object({
     binary_path: z.string().default(""),
     start_paused: z.boolean().default(false),
     fullscreen: z.boolean().default(true),
-    // Default off — the lavfi-complex overlay incantation needs more
-    // hardening before it's safe to enable by default, since a bad filter
-    // graph silently drops the video output.
-    qr_overlay: z.boolean().default(false),
+    // Now safe to default on: overlay is drawn via the OSD layer
+    // (overlay-add IPC), independent of the filter chain — audio routing
+    // and aid switching are unaffected.
+    qr_overlay: z.boolean().default(true),
   }),
   scheduler: z.object({
     prefetch_ahead: z.number().int().min(0).max(10).default(2),

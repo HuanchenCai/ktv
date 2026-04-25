@@ -69,7 +69,9 @@ async function main() {
       const png = await QRCode.toBuffer(url, {
         errorCorrectionLevel: "M",
         margin: 2,
-        width: 512,
+        // 240px gives ~8 px/module for typical LAN URLs while staying
+        // discreet as a corner overlay on a 1080p+ output.
+        width: 240,
         color: { dark: "#000000", light: "#ffffff" },
       });
       mkdirSync(resolve(root, "data"), { recursive: true });

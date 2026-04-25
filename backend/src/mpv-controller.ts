@@ -2,7 +2,8 @@ import { EventEmitter } from "node:events";
 import { existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { platform, tmpdir } from "node:os";
-import { resolve, dirname, join, relative } from "node:path";
+import { resolve, dirname, join } from "node:path";
+import { prepareQrBgra, type BgraOverlay } from "./qr-overlay.ts";
 
 /**
  * node-mpv 1.x — constructor spawns mpv immediately (no .start() method).
@@ -56,22 +57,10 @@ function findMpvBinary(): string | null {
   return null;
 }
 
-/**
- * Render a path that's safe to drop into an FFmpeg filtergraph (`movie=...`).
- * Uses a relative path from `cwd` when possible to dodge the drive-colon
- * escaping problem on Windows entirely. Falls back to absolute + escape if
- * the file isn't reachable via a relative path.
- */
-function ffmpegMoviePath(absPath: string, cwd: string): string {
-  try {
-    const rel = relative(cwd, absPath).replace(/\\/g, "/");
-    if (rel && !rel.startsWith("..") && !rel.includes(":")) return rel;
-  } catch {
-    /* fall through */
-  }
-  // Absolute fallback: forward-slash path with drive colon escaped.
-  return absPath.replace(/\\/g, "/").replace(/:/g, "\\:");
-}
+// (Filter-based overlay was reverted — the lavfi-complex form forced [aid1] to
+// [ao] at startup, which broke runtime aid switching for multi-track files.
+// We now overlay via the `overlay-add` OSD command instead, which leaves the
+// audio chain alone.)
 
 export type MpvState = {
   current_file: string | null;
@@ -99,6 +88,7 @@ export class MpvController extends EventEmitter {
   private fullscreen: boolean;
   private qrOverlayPath: string | null;
   private inputConfPath: string | null = null;
+  private overlayBgra: BgraOverlay | null = null;
 
   /** "stereo" = single-stream pan mode; "tracks" = multi-track aid mode */
   private audioMode: "stereo" | "tracks" = "stereo";
@@ -160,16 +150,21 @@ export class MpvController extends EventEmitter {
       `--input-conf=${this.inputConfPath}`,
     ];
     if (this.fullscreen) mpvArgs.push("--fullscreen");
-    // QR overlay: --lavfi-complex routes both video (with overlay) and audio
-    // (passthrough). Using a relative path for the QR PNG sidesteps Windows
-    // drive-colon escaping in FFmpeg's filter parser.
+
+    // Decode the QR PNG into raw BGRA bytes upfront. mpv's `overlay-add` IPC
+    // command consumes a raw BGRA file and draws on the OSD layer — that's
+    // independent of the filter chain, so audio routing (incl. multi-track
+    // aid switching) is unaffected.
     if (this.qrOverlayPath && existsSync(this.qrOverlayPath)) {
-      const cwd = process.cwd();
-      const moviePath = ffmpegMoviePath(resolve(this.qrOverlayPath), cwd);
-      mpvArgs.push(
-        `--lavfi-complex=[vid1]format=yuva420p[v];movie=${moviePath}:loop=0,scale=220:220,format=rgba[wm];[v][wm]overlay=W-w-40:40[vo];[aid1]anull[ao]`,
-      );
-      console.log(`[mpv] QR overlay enabled (movie=${moviePath})`);
+      try {
+        this.overlayBgra = prepareQrBgra(this.qrOverlayPath);
+        console.log(
+          `[mpv] QR overlay prepared (${this.overlayBgra.width}x${this.overlayBgra.height} -> ${this.overlayBgra.path})`,
+        );
+      } catch (err) {
+        console.warn("[mpv] QR overlay prep failed; disabling:", err);
+        this.overlayBgra = null;
+      }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -182,12 +177,43 @@ export class MpvController extends EventEmitter {
     this.mpv.on("stopped", () => this.emit("track-ended"));
     this.mpv.on("started", () => {
       void this.detectAudioMode().catch(() => {});
+      void this.applyQrOverlay().catch(() => {});
       this.emit("track-started", { channel: this.currentChannel });
     });
     this.mpv.on("resumed", () => this.emit("resumed"));
     this.mpv.on("paused", () => this.emit("paused"));
     this.ready = true;
     console.log("[mpv] ready");
+  }
+
+  /**
+   * Push the prepared QR bitmap onto mpv's OSD via the `overlay-add` command.
+   * Must be called after a file is loaded — mpv computes osd-width from the
+   * actual video stream / output size, which we use to pin the QR to the
+   * top-right corner with a 40 px margin.
+   */
+  private async applyQrOverlay(): Promise<void> {
+    if (!this.mpv || !this.overlayBgra) return;
+    try {
+      const osdW = Number(await this.mpv.getProperty("osd-width")) || 1920;
+      const x = Math.max(0, osdW - this.overlayBgra.width - 40);
+      const y = 40;
+      await Promise.resolve(
+        this.mpv.command("overlay-add", [
+          0,
+          x,
+          y,
+          this.overlayBgra.path,
+          0,
+          "bgra",
+          this.overlayBgra.width,
+          this.overlayBgra.height,
+          this.overlayBgra.stride,
+        ]),
+      );
+    } catch (err) {
+      console.warn("[mpv] overlay-add failed:", err);
+    }
   }
 
   /**
@@ -341,6 +367,11 @@ export class MpvController extends EventEmitter {
 
   async shutdown(): Promise<void> {
     if (this.mpv) {
+      try {
+        await Promise.resolve(this.mpv.command("overlay-remove", [0]));
+      } catch {
+        /* ignore */
+      }
       try {
         this.mpv.quit();
       } catch {
