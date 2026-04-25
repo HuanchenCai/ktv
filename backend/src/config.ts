@@ -18,7 +18,8 @@ const ConfigSchema = z.object({
   mpv: z.object({
     binary_path: z.string().default(""),
     start_paused: z.boolean().default(false),
-    fullscreen: z.boolean().default(false),
+    fullscreen: z.boolean().default(true),
+    qr_overlay: z.boolean().default(true),
   }),
   scheduler: z.object({
     prefetch_ahead: z.number().int().min(0).max(10).default(2),

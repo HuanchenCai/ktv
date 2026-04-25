@@ -1,8 +1,10 @@
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { networkInterfaces as netIfaces } from "node:os";
+import QRCode from "qrcode";
 
 import { loadConfig, projectRoot } from "./config.ts";
 import { openDb } from "./db.ts";
@@ -56,12 +58,36 @@ async function main() {
     token: config.openlist.api_token,
   });
 
+  // --- QR for the on-TV overlay ---------------------------------------------
+
+  let qrPath: string | null = null;
+  if (config.mpv.qr_overlay) {
+    try {
+      qrPath = resolve(root, "data", "qr.png");
+      const lan = primaryLanIp();
+      const url = `http://${lan ?? "localhost"}:${config.http_port}`;
+      const png = await QRCode.toBuffer(url, {
+        errorCorrectionLevel: "M",
+        margin: 2,
+        width: 512,
+        color: { dark: "#000000", light: "#ffffff" },
+      });
+      mkdirSync(resolve(root, "data"), { recursive: true });
+      writeFileSync(qrPath, png);
+      console.log(`[main] QR for ${url} written to ${qrPath}`);
+    } catch (err) {
+      console.warn("[main] QR generation failed; overlay disabled:", err);
+      qrPath = null;
+    }
+  }
+
   // --- mpv ------------------------------------------------------------------
 
   const mpv = new MpvController({
     vocalChannelDefault: config.vocal_channel_default,
     binaryPath: config.mpv.binary_path || undefined,
     fullscreen: config.mpv.fullscreen,
+    qrOverlayPath: qrPath,
   });
 
   try {
@@ -177,7 +203,7 @@ async function main() {
 
   try {
     await fastify.listen({ port: config.http_port, host: "0.0.0.0" });
-    const nets = (await import("node:os")).networkInterfaces();
+    const nets = netIfaces();
     const lan: string[] = [];
     for (const ifaces of Object.values(nets)) {
       for (const net of ifaces ?? []) {
@@ -223,6 +249,16 @@ async function main() {
   };
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
+}
+
+function primaryLanIp(): string | null {
+  const nets = netIfaces();
+  for (const ifaces of Object.values(nets)) {
+    for (const net of ifaces ?? []) {
+      if (net.family === "IPv4" && !net.internal) return net.address;
+    }
+  }
+  return null;
 }
 
 main().catch((err) => {

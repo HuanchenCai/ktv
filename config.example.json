@@ -12,7 +12,8 @@
   "mpv": {
     "binary_path": "",
     "start_paused": false,
-    "fullscreen": false
+    "fullscreen": true,
+    "qr_overlay": true
   },
   "scheduler": {
     "prefetch_ahead": 2,
