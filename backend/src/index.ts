@@ -86,7 +86,15 @@ async function main() {
 
   // --- HTTP server ----------------------------------------------------------
 
-  const fastify = Fastify({ logger: { level: "info" } });
+  const fastify = Fastify({
+    logger: {
+      level: "info",
+      // Drop hostname/pid from every log line. On Chinese Windows the OS
+      // hostname is multi-byte UTF-8 ("我的机") and cmd's default GBK code
+      // page renders it as garbage. We don't need either field.
+      base: undefined,
+    },
+  });
 
   // Be lenient about empty JSON bodies on POST: many of our control endpoints
   // (skip, replay, toggle-vocal, queue/:id/top, import-local) take no payload,
