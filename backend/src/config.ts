@@ -19,7 +19,10 @@ const ConfigSchema = z.object({
     binary_path: z.string().default(""),
     start_paused: z.boolean().default(false),
     fullscreen: z.boolean().default(true),
-    qr_overlay: z.boolean().default(true),
+    // Default off — the lavfi-complex overlay incantation needs more
+    // hardening before it's safe to enable by default, since a bad filter
+    // graph silently drops the video output.
+    qr_overlay: z.boolean().default(false),
   }),
   scheduler: z.object({
     prefetch_ahead: z.number().int().min(0).max(10).default(2),

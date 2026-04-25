@@ -13,7 +13,7 @@
     "binary_path": "",
     "start_paused": false,
     "fullscreen": true,
-    "qr_overlay": true
+    "qr_overlay": false
   },
   "scheduler": {
     "prefetch_ahead": 2,

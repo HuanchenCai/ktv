@@ -152,11 +152,14 @@ export class MpvController extends EventEmitter {
       `--input-conf=${this.inputConfPath}`,
     ];
     if (this.fullscreen) mpvArgs.push("--fullscreen");
+    // QR overlay attempted via --lavfi-complex; the previous --vf-add=lavfi=
+    // syntax caused mpv to drop the video output silently on Windows paths.
+    // We now try the canonical lavfi-complex form. If anything in the chain
+    // fails, mpv will log it but still play the video.
     if (this.qrOverlayPath && existsSync(this.qrOverlayPath)) {
       const escaped = escapeForFfmpegMovie(resolve(this.qrOverlayPath));
-      // Top-right corner, 220px square, on top of the video frame.
       mpvArgs.push(
-        `--vf-add=lavfi=[movie=${escaped}:loop=0,scale=220:220[ovr];[in][ovr]overlay=W-w-40:40]`,
+        `--lavfi-complex=[vid1]format=yuva420p[v];movie=${escaped}:loop=0,scale=220:220,format=rgba[wm];[v][wm]overlay=W-w-40:40[vo]`,
       );
       console.log(`[mpv] QR overlay enabled (${this.qrOverlayPath})`);
     }
