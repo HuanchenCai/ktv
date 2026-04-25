@@ -101,6 +101,14 @@ describe("Orchestrator.enqueue", () => {
     const { orch } = makeOrchestrator(db);
     expect(() => orch.enqueue(999, null)).toThrow();
   });
+
+  it("with top:true, inserts at front when nothing playing", () => {
+    const { orch } = makeOrchestrator(db);
+    orch.enqueue(1, null);
+    orch.enqueue(2, null);
+    orch.enqueue(3, null, { top: true });
+    expect(queueSongIds(db)).toEqual([3, 1, 2]);
+  });
 });
 
 describe("Orchestrator.removeQueueItem + compact", () => {

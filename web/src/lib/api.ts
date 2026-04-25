@@ -67,10 +67,14 @@ export const api = {
   listQueue() {
     return request<{ items: QueueItem[] }>("/api/queue");
   },
-  enqueue(song_id: number) {
+  enqueue(song_id: number, opts?: { top?: boolean }) {
     return request<{ queued: unknown }>("/api/queue", {
       method: "POST",
-      body: JSON.stringify({ song_id, added_by: clientId() }),
+      body: JSON.stringify({
+        song_id,
+        added_by: clientId(),
+        top: !!opts?.top,
+      }),
     });
   },
   removeQueue(queue_id: number) {

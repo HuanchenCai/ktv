@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { ref, watch, onMounted } from "vue";
 import { api, type Song } from "../lib/api";
 
 const q = ref("");
@@ -7,6 +7,7 @@ const loading = ref(false);
 const songs = ref<Song[]>([]);
 const error = ref("");
 const queuedIds = ref<Set<number>>(new Set());
+const heading = ref("热门");
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -15,15 +16,14 @@ watch(q, (val) => {
   debounceTimer = setTimeout(() => run(val), 150);
 });
 
+onMounted(() => run(""));
+
 async function run(query: string) {
-  if (!query.trim()) {
-    songs.value = [];
-    return;
-  }
   loading.value = true;
   error.value = "";
+  heading.value = query.trim() ? `搜索 "${query.trim()}"` : "热门";
   try {
-    const res = await api.searchSongs(query.trim());
+    const res = await api.searchSongs(query.trim(), 50);
     songs.value = res.songs;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
@@ -32,10 +32,10 @@ async function run(query: string) {
   }
 }
 
-async function enqueue(song: Song) {
+async function add(song: Song, top: boolean) {
   queuedIds.value.add(song.id);
   try {
-    await api.enqueue(song.id);
+    await api.enqueue(song.id, { top });
   } catch (err) {
     queuedIds.value.delete(song.id);
     error.value = err instanceof Error ? err.message : String(err);
@@ -56,7 +56,13 @@ async function enqueue(song: Song) {
     />
 
     <div v-if="error" class="text-red-400 text-sm">{{ error }}</div>
-    <div v-if="loading" class="text-muted text-sm">搜索中...</div>
+
+    <div class="flex items-baseline justify-between text-xs text-muted">
+      <span>{{ heading }}</span>
+      <span v-if="songs.length">{{ songs.length }} 首</span>
+    </div>
+
+    <div v-if="loading && !songs.length" class="text-muted text-sm">加载中...</div>
 
     <ul v-if="songs.length" class="space-y-2">
       <li
@@ -72,13 +78,22 @@ async function enqueue(song: Song) {
             <span v-if="song.cached" class="text-green-400"> · 已缓存</span>
           </div>
         </div>
-        <button
-          class="btn-primary text-sm"
-          :disabled="queuedIds.has(song.id)"
-          @click="enqueue(song)"
-        >
-          {{ queuedIds.has(song.id) ? "已点" : "点歌" }}
-        </button>
+        <div class="flex flex-col gap-1 shrink-0">
+          <button
+            class="btn-primary text-xs px-3 py-1"
+            :disabled="queuedIds.has(song.id)"
+            @click="add(song, false)"
+          >
+            {{ queuedIds.has(song.id) ? "已点" : "点歌" }}
+          </button>
+          <button
+            class="btn-ghost text-xs px-3 py-1"
+            :disabled="queuedIds.has(song.id)"
+            @click="add(song, true)"
+          >
+            置顶
+          </button>
+        </div>
       </li>
     </ul>
 
@@ -89,9 +104,14 @@ async function enqueue(song: Song) {
       没找到，换个首字母试试
     </div>
 
-    <div v-else-if="!q" class="text-center text-muted text-xs mt-8 space-y-1">
-      <div>输入每个字的拼音首字母</div>
-      <div>例："只有你" → zyn, "我承担得起你" → wcddqn</div>
+    <div
+      v-else-if="!loading && !songs.length"
+      class="text-center text-muted text-sm mt-8 space-y-1"
+    >
+      <div>曲库还是空的</div>
+      <div class="text-xs">
+        去 admin 页扫百度盘或导入本地 MKV
+      </div>
     </div>
   </div>
 </template>

@@ -9,23 +9,24 @@ export async function registerQueueRoutes(
     return { items: orchestrator.listQueue() };
   });
 
-  fastify.post<{ Body: { song_id: number; added_by?: string } }>(
-    "/api/queue",
-    async (req, rep) => {
-      const { song_id, added_by } = req.body ?? { song_id: 0 };
-      if (!song_id || typeof song_id !== "number") {
-        return rep.code(400).send({ error: "song_id required" });
-      }
-      try {
-        const item = orchestrator.enqueue(song_id, added_by ?? null);
-        return { queued: item };
-      } catch (err) {
-        return rep
-          .code(400)
-          .send({ error: err instanceof Error ? err.message : String(err) });
-      }
-    },
-  );
+  fastify.post<{
+    Body: { song_id: number; added_by?: string; top?: boolean };
+  }>("/api/queue", async (req, rep) => {
+    const { song_id, added_by, top } = req.body ?? { song_id: 0 };
+    if (!song_id || typeof song_id !== "number") {
+      return rep.code(400).send({ error: "song_id required" });
+    }
+    try {
+      const item = orchestrator.enqueue(song_id, added_by ?? null, {
+        top: !!top,
+      });
+      return { queued: item };
+    } catch (err) {
+      return rep
+        .code(400)
+        .send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
 
   fastify.delete<{ Params: { id: string } }>(
     "/api/queue/:id",

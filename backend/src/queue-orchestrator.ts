@@ -86,7 +86,11 @@ export class Orchestrator extends EventEmitter {
 
   // --- Queue ops -----------------------------------------------------------
 
-  enqueue(songId: number, addedBy: string | null): QueueItem {
+  enqueue(
+    songId: number,
+    addedBy: string | null,
+    opts?: { top?: boolean },
+  ): QueueItem {
     const song = this.db
       .prepare("SELECT * FROM songs WHERE id = ?")
       .get(songId) as Song | undefined;
@@ -106,7 +110,12 @@ export class Orchestrator extends EventEmitter {
     const item = this.db
       .prepare("SELECT * FROM queue WHERE id = ?")
       .get(info.lastInsertRowid) as QueueItem;
-    this.emit("queue.updated");
+
+    if (opts?.top) {
+      this.moveToFront(item.id);
+    } else {
+      this.emit("queue.updated");
+    }
     void this.scheduleDownloads().catch(() => {});
     void this.maybeAutoPlay().catch(() => {});
     return item;
@@ -118,21 +127,51 @@ export class Orchestrator extends EventEmitter {
     this.emit("queue.updated");
   }
 
+  /**
+   * Move a queue item to "play next". If a song is currently playing
+   * (position 1), the target lands at position 2, never displacing the
+   * playing track. Otherwise it goes to position 1.
+   */
   moveToFront(queueId: number): void {
     const item = this.db
       .prepare("SELECT * FROM queue WHERE id = ?")
       .get(queueId) as QueueItem | undefined;
     if (!item) return;
 
-    // Insert at position 1 (assuming positions start at 1 — see compact).
+    const insertPos = this.currentSongId !== null ? 2 : 1;
+
+    // Item already at the right spot — no-op.
+    if (item.position === insertPos) {
+      this.emit("queue.updated");
+      return;
+    }
+
     withTransaction(this.db, () => {
-      // bump everything up, then place item at 1
+      // Shift other items in [insertPos, item.oldPos) up by 1, then place
+      // the target at insertPos. We use a temp position to avoid uniqueness
+      // conflicts during the shift even though we don't have a unique index.
+      const oldPos = item.position;
       this.db
-        .prepare("UPDATE queue SET position = position + 1 WHERE id != ?")
+        .prepare("UPDATE queue SET position = -1 WHERE id = ?")
         .run(queueId);
+      if (oldPos > insertPos) {
+        this.db
+          .prepare(
+            "UPDATE queue SET position = position + 1 WHERE position >= ? AND position < ?",
+          )
+          .run(insertPos, oldPos);
+      } else {
+        // oldPos < insertPos shouldn't really happen for "promote", but
+        // handle for symmetry: shift items down between (oldPos, insertPos].
+        this.db
+          .prepare(
+            "UPDATE queue SET position = position - 1 WHERE position > ? AND position <= ?",
+          )
+          .run(oldPos, insertPos);
+      }
       this.db
-        .prepare("UPDATE queue SET position = 1 WHERE id = ?")
-        .run(queueId);
+        .prepare("UPDATE queue SET position = ? WHERE id = ?")
+        .run(insertPos, queueId);
     });
     this.compactPositions();
     this.emit("queue.updated");
