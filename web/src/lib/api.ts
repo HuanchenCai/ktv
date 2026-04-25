@@ -35,10 +35,32 @@ export type QueueItem = {
 function clientId(): string {
   let id = localStorage.getItem("ktv_client_id");
   if (!id) {
-    id = crypto.randomUUID();
+    id = generateClientId();
     localStorage.setItem("ktv_client_id", id);
   }
   return id;
+}
+
+/**
+ * Stable per-browser identifier. Doesn't need cryptographic strength — it
+ * only tags "who pointed this song" in the queue. crypto.randomUUID() is
+ * unavailable in non-secure contexts (http on a LAN IP, which is exactly
+ * how phones reach us), so we hand-roll.
+ */
+function generateClientId(): string {
+  const bytes = new Uint8Array(8);
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.getRandomValues === "function"
+  ) {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < 8; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  const hex = Array.from(bytes, (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+  return `c-${Date.now().toString(36)}-${hex}`;
 }
 
 async function request<T>(
