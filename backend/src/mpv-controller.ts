@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { platform, tmpdir } from "node:os";
-import { resolve, dirname, join } from "node:path";
+import { resolve, dirname, join, relative } from "node:path";
 
 /**
  * node-mpv 1.x — constructor spawns mpv immediately (no .start() method).
@@ -57,12 +57,20 @@ function findMpvBinary(): string | null {
 }
 
 /**
- * Format an absolute filesystem path for FFmpeg's `movie=` filter argument.
- * FFmpeg uses `:` as the option separator inside a filter, so the Windows
- * drive colon has to be escaped.
+ * Render a path that's safe to drop into an FFmpeg filtergraph (`movie=...`).
+ * Uses a relative path from `cwd` when possible to dodge the drive-colon
+ * escaping problem on Windows entirely. Falls back to absolute + escape if
+ * the file isn't reachable via a relative path.
  */
-function escapeForFfmpegMovie(p: string): string {
-  return p.replace(/\\/g, "/").replace(/:/g, "\\:");
+function ffmpegMoviePath(absPath: string, cwd: string): string {
+  try {
+    const rel = relative(cwd, absPath).replace(/\\/g, "/");
+    if (rel && !rel.startsWith("..") && !rel.includes(":")) return rel;
+  } catch {
+    /* fall through */
+  }
+  // Absolute fallback: forward-slash path with drive colon escaped.
+  return absPath.replace(/\\/g, "/").replace(/:/g, "\\:");
 }
 
 export type MpvState = {
@@ -152,16 +160,16 @@ export class MpvController extends EventEmitter {
       `--input-conf=${this.inputConfPath}`,
     ];
     if (this.fullscreen) mpvArgs.push("--fullscreen");
-    // QR overlay attempted via --lavfi-complex; the previous --vf-add=lavfi=
-    // syntax caused mpv to drop the video output silently on Windows paths.
-    // We now try the canonical lavfi-complex form. If anything in the chain
-    // fails, mpv will log it but still play the video.
+    // QR overlay: --lavfi-complex routes both video (with overlay) and audio
+    // (passthrough). Using a relative path for the QR PNG sidesteps Windows
+    // drive-colon escaping in FFmpeg's filter parser.
     if (this.qrOverlayPath && existsSync(this.qrOverlayPath)) {
-      const escaped = escapeForFfmpegMovie(resolve(this.qrOverlayPath));
+      const cwd = process.cwd();
+      const moviePath = ffmpegMoviePath(resolve(this.qrOverlayPath), cwd);
       mpvArgs.push(
-        `--lavfi-complex=[vid1]format=yuva420p[v];movie=${escaped}:loop=0,scale=220:220,format=rgba[wm];[v][wm]overlay=W-w-40:40[vo]`,
+        `--lavfi-complex=[vid1]format=yuva420p[v];movie=${moviePath}:loop=0,scale=220:220,format=rgba[wm];[v][wm]overlay=W-w-40:40[vo];[aid1]anull[ao]`,
       );
-      console.log(`[mpv] QR overlay enabled (${this.qrOverlayPath})`);
+      console.log(`[mpv] QR overlay enabled (movie=${moviePath})`);
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
