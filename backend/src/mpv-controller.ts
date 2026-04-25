@@ -147,6 +147,9 @@ export class MpvController extends EventEmitter {
     const mpvArgs: string[] = [
       "--keep-open=yes",
       "--idle=yes",
+      "--force-window=yes", // show a window immediately, even before any file loads
+      "--ontop=yes", // surface mpv above the user's other windows
+      "--title=KTV",
       `--input-conf=${this.inputConfPath}`,
     ];
     if (this.fullscreen) mpvArgs.push("--fullscreen");
