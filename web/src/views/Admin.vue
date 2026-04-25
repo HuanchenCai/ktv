@@ -17,6 +17,7 @@ const scanResult = ref<string>("");
 const scanning = ref(false);
 const importResult = ref<string>("");
 const importing = ref(false);
+const importPath = ref<string>("");
 const error = ref("");
 
 async function refresh() {
@@ -50,8 +51,8 @@ async function runImportLocal() {
   importing.value = true;
   error.value = "";
   try {
-    const r = await api.importLocal();
-    importResult.value = `扫 ${r.scanned} 个文件，入库 ${r.added}，跳过 ${r.skipped}`;
+    const r = await api.importLocal(importPath.value || undefined);
+    importResult.value = `扫 ${r.scanned} 个文件（${r.scanned_path}），入库 ${r.added}，跳过 ${r.skipped}`;
     await refresh();
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
@@ -125,9 +126,14 @@ async function runImportLocal() {
     <div class="card space-y-2">
       <div class="font-semibold">导入本地已有 MKV（调试用）</div>
       <div class="text-xs text-muted">
-        扫描 library_path 下的 .mkv/.mp4 文件，直接标记为"已缓存"入库。
+        扫描指定目录下的 .mkv/.mp4 文件，直接标记为"已缓存"入库。
         绕过百度盘配置快速验证播放/切声道。
       </div>
+      <input
+        v-model="importPath"
+        class="input text-sm"
+        placeholder="留空 = 用 config.library_path；或填: H:\\BaiduNetdiskDownload"
+      />
       <button
         class="btn-ghost"
         :disabled="importing"

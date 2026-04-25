@@ -88,6 +88,26 @@ async function main() {
 
   const fastify = Fastify({ logger: { level: "info" } });
 
+  // Be lenient about empty JSON bodies on POST: many of our control endpoints
+  // (skip, replay, toggle-vocal, queue/:id/top, import-local) take no payload,
+  // and our web client sends application/json without a body for those.
+  fastify.removeContentTypeParser("application/json");
+  fastify.addContentTypeParser(
+    "application/json",
+    { parseAs: "string" },
+    (_req, body, done) => {
+      if (typeof body !== "string" || body.length === 0) {
+        done(null, {});
+        return;
+      }
+      try {
+        done(null, JSON.parse(body));
+      } catch (err) {
+        done(err as Error, undefined);
+      }
+    },
+  );
+
   await fastify.register(fastifyWebsocket);
 
   // Serve built web UI if present

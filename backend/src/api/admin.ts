@@ -55,14 +55,28 @@ export async function registerAdminRoutes(
   /**
    * Add any local MKV/MP4 files in library_path as already-cached songs.
    * Bypass for smoke-testing playback without Baidu configuration.
+   * Optional body: { path: "H:/SomeFolder" } to scan a different directory.
    */
-  fastify.post("/api/admin/import-local", async (req, rep) => {
-    if (!db || !libraryPath) {
-      return rep.code(500).send({ error: "import-local not wired up" });
-    }
-    const result = await importLocalLibrary(db, libraryPath);
-    return result;
-  });
+  fastify.post<{ Body: { path?: string } }>(
+    "/api/admin/import-local",
+    async (req, rep) => {
+      if (!db || !libraryPath) {
+        return rep.code(500).send({ error: "import-local not wired up" });
+      }
+      const target = req.body?.path?.trim() || libraryPath;
+      try {
+        const result = await importLocalLibrary(db, target);
+        return { ...result, scanned_path: target };
+      } catch (err) {
+        return rep
+          .code(500)
+          .send({
+            error: err instanceof Error ? err.message : String(err),
+            scanned_path: target,
+          });
+      }
+    },
+  );
 }
 
 function getLanIps(): string[] {

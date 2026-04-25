@@ -6,16 +6,19 @@ type WsMessage =
   | { type: "download.progress"; payload: unknown }
   | { type: "player.state"; payload: unknown };
 
-// Fastify WebSocket route accepts a handler where `connection` has `.socket` (ws)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type WsConnection = { socket: any };
+// @fastify/websocket v10+ passes the WebSocket itself as the first argument
+// (older versions wrapped it in `{ socket }`). The minimal shape we need:
+type WsLike = {
+  readyState: number;
+  send: (data: string) => void;
+  on: (event: string, cb: (...a: unknown[]) => void) => void;
+};
 
 export async function registerWs(
   fastify: FastifyInstance,
   orchestrator: Orchestrator,
 ): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const clients = new Set<any>();
+  const clients = new Set<WsLike>();
 
   const broadcast = (msg: WsMessage) => {
     const payload = JSON.stringify(msg);
@@ -36,17 +39,19 @@ export async function registerWs(
     broadcast({ type: "player.state", payload: state }),
   );
 
-  const wsHandler = (connection: WsConnection) => {
-    const sock = connection.socket;
+  const wsHandler = (sock: WsLike) => {
     clients.add(sock);
     sock.on("close", () => clients.delete(sock));
     sock.on("error", () => clients.delete(sock));
-    // Initial sync: send current queue snapshot
-    sock.send(JSON.stringify({ type: "queue.updated" }));
+    // Initial sync nudge: tell the client to refresh queue.
+    try {
+      sock.send(JSON.stringify({ type: "queue.updated" }));
+    } catch {
+      /* ignore */
+    }
   };
 
-  // @fastify/websocket options aren't part of the base Fastify route types;
-  // cast to unblock typecheck without giving up handler typing.
+  // @fastify/websocket options aren't part of the base Fastify route types.
   (fastify.get as unknown as (
     path: string,
     opts: { websocket: boolean },

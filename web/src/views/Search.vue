@@ -91,7 +91,7 @@ async function enqueue(song: Song) {
 
     <div v-else-if="!q" class="text-center text-muted text-xs mt-8 space-y-1">
       <div>输入每个字的拼音首字母</div>
-      <div>例："只有你" → zyn, "我承担得起你" → wcdhn</div>
+      <div>例："只有你" → zyn, "我承担得起你" → wcddqn</div>
     </div>
   </div>
 </template>
