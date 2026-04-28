@@ -82,9 +82,15 @@ async function request<T>(
 }
 
 export const api = {
-  searchSongs(q: string, limit = 30) {
+  searchSongs(q: string, limit = 30, artist?: string) {
     const u = new URLSearchParams({ q, limit: String(limit) });
+    if (artist) u.set("artist", artist);
     return request<{ songs: Song[]; count: number }>(`/api/songs?${u}`);
+  },
+  popularArtists() {
+    return request<{
+      artists: Array<{ artist: string; count: number }>;
+    }>("/api/popular-artists");
   },
   listQueue() {
     return request<{ items: QueueItem[] }>("/api/queue");

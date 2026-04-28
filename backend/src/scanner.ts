@@ -3,15 +3,19 @@ import type { Db } from "./db.ts";
 import { toPinyinInitials } from "./pinyin.ts";
 
 /**
- * Parse KTV MV filename into {title, lang, genre}.
+ * Parse KTV MV filename into {title, artist, lang, genre}. The library is
+ * organized "按人分" (`<artist>/<file>.mkv`), so the parent directory name
+ * is authoritative for the artist when present.
  *
- * Observed convention (B'in MUSIC et al):
- *   如果明天世界末日[MTV]-魔幻力量-国语-流行.mkv
- *            ^title       ^artist  ^lang ^genre
+ * Observed conventions:
+ *   B'in MUSIC: title-artist-lang-genre.mkv     (title comes first)
+ *   公关流通版: artist-title-lang-genre.mkv     (artist comes first)
+ *   裸名:       title.mkv                       (no separators)
+ *   带 tag:     title[MTV]-artist-...mkv        ([MTV]/[HD]/[MV] etc.)
  *
- * But titles also sometimes carry no [MTV] tag, or artist comes from the directory.
- * We keep this tolerant: title = first segment stripped of tags; artist/lang/genre
- * optional; directory name wins for artist since user's library is organized "按人分".
+ * Heuristic: if `parentDir` matches one of the parts, use that as the
+ * artist and pick the title from the *other* candidate. Otherwise default
+ * to the B'in title-first convention.
  */
 export function parseFilename(
   filename: string,
@@ -23,14 +27,62 @@ export function parseFilename(
   genre: string | null;
 } {
   const noExt = filename.replace(/\.[^.]+$/, "");
-  const parts = noExt.split(/[-_—]/).map((s) => s.trim()).filter(Boolean);
-  // Strip [MTV] [MV] etc tags from title
   const stripTags = (s: string) => s.replace(/\[[^\]]*\]/g, "").trim();
+  const parts = noExt
+    .split(/[-_—]/)
+    .map((s) => stripTags(s))
+    .filter(Boolean);
 
-  const title = stripTags(parts[0] ?? noExt);
-  const artist = parts[1] ?? parentDir;
-  const lang = parts[2] ?? null;
-  const genre = parts[3] ?? null;
+  if (parts.length === 0) {
+    return {
+      title: noExt,
+      artist: parentDir || "unknown",
+      lang: null,
+      genre: null,
+    };
+  }
+
+  // Single-part filename: just the title.
+  if (parts.length === 1) {
+    return {
+      title: parts[0],
+      artist: parentDir || "unknown",
+      lang: null,
+      genre: null,
+    };
+  }
+
+  // If a part exactly matches the directory name, that part is the artist
+  // and we trust the directory.
+  const artistIdx = parentDir
+    ? parts.findIndex((p) => p === parentDir)
+    : -1;
+
+  let title: string;
+  let artist: string;
+  let lang: string | null = null;
+  let genre: string | null = null;
+
+  if (artistIdx === 0) {
+    // artist-title-lang-genre
+    artist = parts[0];
+    title = parts[1];
+    lang = parts[2] ?? null;
+    genre = parts[3] ?? null;
+  } else if (artistIdx > 0) {
+    // title-artist-lang-genre (artist matches dir)
+    title = parts[0];
+    artist = parts[artistIdx];
+    lang = parts[artistIdx + 1] ?? null;
+    genre = parts[artistIdx + 2] ?? null;
+  } else {
+    // No match: fall back to B'in convention. parts[1] is the artist;
+    // if absent, the directory name wins.
+    title = parts[0];
+    artist = parts[1] ?? parentDir ?? "unknown";
+    lang = parts[2] ?? null;
+    genre = parts[3] ?? null;
+  }
 
   return { title, artist: artist || "unknown", lang, genre };
 }

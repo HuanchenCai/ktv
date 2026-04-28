@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { Db, Song } from "../db.ts";
+import { popularArtistsInLibrary } from "../popular-artists.ts";
 
 export async function registerSongsRoutes(
   fastify: FastifyInstance,
@@ -52,6 +53,23 @@ export async function registerSongsRoutes(
       )
       .all();
     return { artists: rows };
+  });
+
+  /**
+   * Curated KTV artists that actually have songs in the user's library.
+   * Returns at most ~30 names in curated (recognizability) order, each
+   * with its current song count so the UI can show "30 首" badges.
+   */
+  fastify.get("/api/popular-artists", async () => {
+    const rows = db
+      .prepare("SELECT artist, COUNT(*) AS count FROM songs GROUP BY artist")
+      .all() as Array<{ artist: string; count: number }>;
+    const counts = new Map(rows.map((r) => [r.artist, r.count]));
+    const present = new Set(rows.map((r) => r.artist));
+    const ordered = popularArtistsInLibrary(present);
+    return {
+      artists: ordered.map((a) => ({ artist: a, count: counts.get(a) ?? 0 })),
+    };
   });
 
   fastify.get("/api/stats", async () => {

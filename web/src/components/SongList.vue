@@ -25,6 +25,8 @@ const songs = ref<Song[]>([]);
 const error = ref("");
 const queuedIds = ref<Set<number>>(new Set());
 const heading = ref("热门");
+const popular = ref<Array<{ artist: string; count: number }>>([]);
+const selectedArtist = ref<string | null>(null);
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -33,20 +35,44 @@ watch(q, (val) => {
   debounceTimer = setTimeout(() => run(val), 150);
 });
 
-onMounted(() => run(""));
+onMounted(async () => {
+  await run("");
+  try {
+    const r = await api.popularArtists();
+    popular.value = r.artists;
+  } catch {
+    /* not fatal */
+  }
+});
 
 async function run(query: string) {
   loading.value = true;
   error.value = "";
-  heading.value = query.trim() ? `搜索 "${query.trim()}"` : "热门";
+  if (selectedArtist.value) {
+    heading.value = `${selectedArtist.value}的歌`;
+  } else if (query.trim()) {
+    heading.value = `搜索 "${query.trim()}"`;
+  } else {
+    heading.value = "热门";
+  }
   try {
-    const res = await api.searchSongs(query.trim(), props.limit);
+    const res = await api.searchSongs(
+      query.trim(),
+      props.limit,
+      selectedArtist.value ?? undefined,
+    );
     songs.value = res.songs;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
     loading.value = false;
   }
+}
+
+function selectArtist(name: string | null) {
+  selectedArtist.value = selectedArtist.value === name ? null : name;
+  q.value = "";
+  run("");
 }
 
 async function add(song: Song, top: boolean) {
@@ -70,6 +96,33 @@ async function add(song: Song, top: boolean) {
       spellcheck="false"
       inputmode="search"
     />
+
+    <div
+      v-if="popular.length"
+      class="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1"
+    >
+      <button
+        v-if="selectedArtist"
+        class="shrink-0 px-3 py-1.5 rounded-full text-xs bg-accent text-white"
+        @click="selectArtist(null)"
+      >
+        × 清除筛选
+      </button>
+      <button
+        v-for="a in popular"
+        :key="a.artist"
+        class="shrink-0 px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors"
+        :class="
+          selectedArtist === a.artist
+            ? 'bg-accent text-white'
+            : 'bg-panel text-white/80 hover:text-white'
+        "
+        @click="selectArtist(a.artist)"
+      >
+        {{ a.artist }}
+        <span class="text-muted ml-1">{{ a.count }}</span>
+      </button>
+    </div>
 
     <div v-if="error" class="text-red-400 text-sm">{{ error }}</div>
 
