@@ -3,48 +3,81 @@ import { ref } from "vue";
 import { api } from "../lib/api";
 
 const volume = ref(80);
+const lastAction = ref("");
 
-async function doSkip() {
-  await api.skip();
+async function flash(label: string, fn: () => Promise<unknown>) {
+  lastAction.value = label;
+  setTimeout(() => {
+    if (lastAction.value === label) lastAction.value = "";
+  }, 1200);
+  try {
+    await fn();
+  } catch {
+    /* ignore */
+  }
 }
-async function doReplay() {
-  await api.replay();
-}
-async function doToggle() {
-  await api.toggleVocal();
-}
-async function doSwap() {
-  await api.swapVocalChannel();
-}
-async function setChan(c: "L" | "R" | "both") {
-  await api.setChannel(c);
-}
+
+const doSkip = () => flash("切歌", () => api.skip());
+const doReplay = () => flash("重唱", () => api.replay());
+const doToggle = () => flash("原唱/伴唱", () => api.toggleVocal());
+const doSwap = () => flash("L/R 反转", () => api.swapVocalChannel());
+const setChan = (c: "L" | "R" | "both") =>
+  flash(`声道 ${c}`, () => api.setChannel(c));
 async function onVolume() {
   await api.setVolume(volume.value);
 }
 </script>
 
 <template>
-  <div class="space-y-3">
+  <div class="card space-y-3 p-4">
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-semibold">控制</h3>
+      <span
+        v-if="lastAction"
+        class="text-xs text-accent animate-fade-in"
+      >
+        {{ lastAction }}
+      </span>
+    </div>
+
+    <button class="btn-primary w-full py-2.5 text-sm" @click="doToggle">
+      🎙 原唱 / 伴唱
+    </button>
+
     <div class="grid grid-cols-3 gap-2">
-      <button class="btn-ghost" @click="setChan('L')">只 L</button>
-      <button class="btn-ghost" @click="setChan('both')">双声道</button>
-      <button class="btn-ghost" @click="setChan('R')">只 R</button>
+      <button
+        class="btn-ghost text-xs py-1.5"
+        @click="setChan('L')"
+        title="只播左声道"
+      >
+        只 L
+      </button>
+      <button
+        class="btn-ghost text-xs py-1.5"
+        @click="setChan('both')"
+        title="双声道一起播"
+      >
+        双声道
+      </button>
+      <button
+        class="btn-ghost text-xs py-1.5"
+        @click="setChan('R')"
+        title="只播右声道"
+      >
+        只 R
+      </button>
     </div>
 
-    <div class="grid grid-cols-2 gap-2">
-      <button class="btn-primary" @click="doToggle">原唱/伴唱</button>
-      <button class="btn-ghost" @click="doSwap">这首 L/R 反了</button>
+    <div class="grid grid-cols-3 gap-2">
+      <button class="btn-ghost text-xs py-1.5" @click="doReplay">↻ 重唱</button>
+      <button class="btn-ghost text-xs py-1.5" @click="doSwap">↔ L/R 反</button>
+      <button class="btn-ghost text-xs py-1.5" @click="doSkip">⏭ 切歌</button>
     </div>
 
-    <div class="grid grid-cols-2 gap-2">
-      <button class="btn-ghost" @click="doReplay">重唱</button>
-      <button class="btn-ghost" @click="doSkip">切歌</button>
-    </div>
-
-    <div class="card space-y-2">
-      <div class="flex justify-between text-xs text-muted">
-        <span>音量</span><span>{{ volume }}</span>
+    <div class="space-y-1.5 pt-1">
+      <div class="flex justify-between text-[11px] text-muted">
+        <span>音量</span>
+        <span class="font-mono tabular-nums">{{ volume }}</span>
       </div>
       <input
         v-model.number="volume"

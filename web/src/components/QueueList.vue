@@ -7,7 +7,7 @@ withDefaults(
   defineProps<{
     /** "compact" hides 删除/置顶 buttons (TV display); "full" shows them (phone) */
     variant?: "compact" | "full";
-    /** Limit number of items rendered (TV bottom strip) */
+    /** Limit number of items rendered */
     limit?: number;
   }>(),
   { variant: "full", limit: 0 },
@@ -56,61 +56,108 @@ function pct(t: DownloadTask | null): number {
 function dlLabel(t: DownloadTask | null): string {
   if (!t) return "";
   if (t.status === "done") return "已缓存";
-  if (t.status === "pending") return "排队中";
-  if (t.status === "downloading") return `下载 ${pct(t)}%`;
-  if (t.status === "failed") return "下载失败";
+  if (t.status === "pending") return "排队";
+  if (t.status === "downloading") return `${pct(t)}%`;
+  if (t.status === "failed") return "失败";
   return "";
 }
-
-function visibleItems() {
-  return [];
+function dlClass(t: DownloadTask | null): string {
+  if (!t) return "text-muted";
+  if (t.status === "done") return "text-emerald-400";
+  if (t.status === "failed") return "text-rose-400";
+  if (t.status === "downloading") return "text-accent";
+  return "text-muted";
 }
-void visibleItems;
 </script>
 
 <template>
-  <div class="space-y-3">
-    <div v-if="!items.length" class="text-center text-muted text-sm py-4">
-      队列是空的
+  <div>
+    <div
+      v-if="!items.length"
+      class="text-center text-muted text-xs py-6"
+    >
+      队列空空如也
     </div>
 
-    <div v-if="error" class="text-red-400 text-sm">{{ error }}</div>
+    <div v-if="error" class="text-rose-400 text-sm">{{ error }}</div>
 
     <ul class="space-y-2">
       <li
         v-for="it in (limit ? items.slice(0, limit) : items)"
         :key="it.queue_id"
-        class="card space-y-1"
-        :class="{ 'ring-1 ring-accent': it.is_current }"
+        class="bg-panel rounded-xl px-3 py-2.5 border border-transparent transition-colors"
+        :class="
+          it.is_current
+            ? 'ring-1 ring-accent/60 border-accent/30 bg-accent/5'
+            : ''
+        "
       >
-        <div class="flex items-center justify-between gap-3">
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 text-xs text-muted">
-              <span class="font-mono">#{{ it.position }}</span>
-              <span v-if="it.is_current" class="text-accent">播放中</span>
-            </div>
-            <div class="truncate">{{ it.song.title }}</div>
-            <div class="text-xs text-muted truncate">{{ it.song.artist }}</div>
+        <div class="flex items-center gap-3">
+          <div
+            class="w-8 h-8 rounded-lg shrink-0 grid place-items-center text-xs font-bold"
+            :class="
+              it.is_current
+                ? 'bg-accent text-white'
+                : 'bg-elevated text-muted'
+            "
+          >
+            <span v-if="it.is_current">▶</span>
+            <span v-else>{{ it.position }}</span>
           </div>
-          <div v-if="variant === 'full'" class="flex items-center gap-2">
+          <div class="flex-1 min-w-0">
+            <div class="truncate text-sm font-medium">{{ it.song.title }}</div>
+            <div class="text-[11px] text-muted truncate">
+              {{ it.song.artist
+              }}<span v-if="it.song.lang"> · {{ it.song.lang }}</span>
+            </div>
+          </div>
+          <div
+            v-if="variant === 'full'"
+            class="flex items-center gap-1.5 shrink-0"
+          >
             <button
               v-if="!it.is_current && it.position !== 1"
-              class="btn-ghost text-xs"
+              class="text-[11px] text-muted hover:text-white px-2 py-1 rounded transition-colors"
               @click="toTop(it)"
             >
-              插到下一首
+              ↑ 置顶
             </button>
-            <button class="btn-ghost text-xs" @click="remove(it)">删除</button>
+            <button
+              class="text-[11px] text-muted hover:text-rose-400 px-2 py-1 rounded transition-colors"
+              @click="remove(it)"
+            >
+              删除
+            </button>
+          </div>
+          <div
+            v-else-if="it.download"
+            class="text-[11px] shrink-0"
+            :class="dlClass(it.download)"
+          >
+            {{ dlLabel(it.download) }}
           </div>
         </div>
-        <div v-if="it.download" class="flex items-center gap-2">
-          <div class="flex-1 h-1 bg-black/40 rounded overflow-hidden">
+
+        <div
+          v-if="
+            variant === 'full' &&
+            it.download &&
+            it.download.status !== 'done'
+          "
+          class="flex items-center gap-2 mt-2"
+        >
+          <div class="flex-1 h-1 bg-black/30 rounded overflow-hidden">
             <div
-              class="h-full bg-accent transition-all"
+              class="h-full transition-all"
+              :class="
+                it.download.status === 'failed'
+                  ? 'bg-rose-500'
+                  : 'bg-accent'
+              "
               :style="{ width: pct(it.download) + '%' }"
             ></div>
           </div>
-          <div class="text-xs text-muted w-20 text-right">
+          <div class="text-[11px] w-16 text-right" :class="dlClass(it.download)">
             {{ dlLabel(it.download) }}
           </div>
         </div>

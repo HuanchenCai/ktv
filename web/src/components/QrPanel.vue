@@ -31,18 +31,23 @@ onMounted(() => refresh());
 <template>
   <div
     v-if="size === 'hero'"
-    class="card text-center space-y-2"
+    class="card text-center space-y-3 p-5 ring-1 ring-border bg-gradient-to-br from-panel to-elevated"
   >
-    <div class="font-semibold">扫码点歌</div>
-    <img
-      v-if="qr"
-      :src="qr.qr_data_url"
-      class="mx-auto rounded bg-white p-2"
-      style="width: 280px; height: 280px"
-    />
-    <div v-if="qr" class="text-xs text-muted font-mono">
-      {{ qr.url }}
+    <div class="space-y-0.5">
+      <div class="text-base font-semibold">扫码加入</div>
+      <div class="text-[11px] text-muted tracking-wider">SCAN TO JOIN</div>
     </div>
+    <div
+      class="bg-white p-3 rounded-xl mx-auto w-fit shadow-deep"
+    >
+      <img
+        v-if="qr"
+        :src="qr.qr_data_url"
+        class="block"
+        style="width: 220px; height: 220px"
+      />
+    </div>
+    <div v-if="qr" class="text-xs text-muted font-mono">{{ qr.url }}</div>
   </div>
 
   <div v-else class="card text-center space-y-2">
@@ -50,7 +55,7 @@ onMounted(() => refresh());
     <img
       v-if="qr"
       :src="qr.qr_data_url"
-      class="mx-auto w-48 h-48 rounded bg-white p-2"
+      class="mx-auto w-40 h-40 rounded bg-white p-2"
     />
     <div v-if="qr" class="text-xs text-muted font-mono">
       {{ qr.url }}<br />

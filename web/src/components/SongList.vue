@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from "vue";
+import { RouterLink } from "vue-router";
 import { api, type Song } from "../lib/api";
 import SongRow from "./SongRow.vue";
+void RouterLink; // referenced in template
 
 const props = withDefaults(
   defineProps<{
@@ -103,7 +105,7 @@ async function add(song: Song, top: boolean) {
     >
       <button
         v-if="selectedArtist"
-        class="shrink-0 px-3 py-1.5 rounded-full text-xs bg-accent text-white"
+        class="chip chip-active"
         @click="selectArtist(null)"
       >
         × 清除筛选
@@ -111,24 +113,24 @@ async function add(song: Song, top: boolean) {
       <button
         v-for="a in popular"
         :key="a.artist"
-        class="shrink-0 px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors"
-        :class="
-          selectedArtist === a.artist
-            ? 'bg-accent text-white'
-            : 'bg-panel text-white/80 hover:text-white'
-        "
+        :class="selectedArtist === a.artist ? 'chip-active' : 'chip-default'"
         @click="selectArtist(a.artist)"
       >
         {{ a.artist }}
-        <span class="text-muted ml-1">{{ a.count }}</span>
+        <span
+          class="ml-1.5"
+          :class="selectedArtist === a.artist ? 'text-white/70' : 'text-muted'"
+        >{{ a.count }}</span>
       </button>
     </div>
 
     <div v-if="error" class="text-red-400 text-sm">{{ error }}</div>
 
-    <div class="flex items-baseline justify-between text-xs text-muted">
-      <span>{{ heading }}</span>
-      <span v-if="songs.length">{{ songs.length }} 首</span>
+    <div class="flex items-baseline justify-between text-xs">
+      <span class="text-white/60 font-medium">{{ heading }}</span>
+      <span v-if="songs.length" class="text-muted tabular-nums">
+        {{ songs.length }} 首
+      </span>
     </div>
 
     <div v-if="loading && !songs.length" class="text-muted text-sm">加载中...</div>
@@ -166,17 +168,24 @@ async function add(song: Song, top: boolean) {
 
     <div
       v-else-if="!loading && q"
-      class="text-center text-muted text-sm mt-8"
+      class="text-center text-muted text-sm mt-12 space-y-2"
     >
-      没找到，换个首字母试试
+      <div class="text-3xl">🤔</div>
+      <div>没找到</div>
+      <div class="text-xs">换个首字母试试，或者从上方筛选歌手</div>
     </div>
 
     <div
       v-else-if="!loading && !songs.length"
-      class="text-center text-muted text-sm mt-8 space-y-1"
+      class="text-center text-muted text-sm mt-12 space-y-2"
     >
+      <div class="text-3xl">📀</div>
       <div>曲库还是空的</div>
-      <div class="text-xs">去 admin 页扫百度盘或导入本地 MKV</div>
+      <div class="text-xs">
+        去
+        <RouterLink to="/admin" class="text-accent">管理页</RouterLink>
+        扫百度盘或导入本地 MKV
+      </div>
     </div>
   </div>
 </template>

@@ -147,9 +147,14 @@ export class MpvController extends EventEmitter {
     const mpvArgs: string[] = [
       "--keep-open=yes",
       "--idle=yes",
-      "--force-window=yes", // show a window immediately, even before any file loads
-      "--ontop=yes", // surface mpv above the user's other windows
+      // No --force-window: mpv stays headless when nothing is queued. The
+      // browser /tv view (AirPlayed/projected to the TV) is the idle screen.
+      // mpv only pops a window when a song actually loads, then ontop +
+      // fullscreen pushes it on top of the browser for the duration of play.
+      "--ontop=yes",
       "--title=KTV",
+      "--cursor-autohide=1000", // hide cursor over the video after 1s
+      "--osc=no", // we draw our own controls in the web UI
       `--input-conf=${this.inputConfPath}`,
     ];
     if (this.fullscreen) mpvArgs.push("--fullscreen");

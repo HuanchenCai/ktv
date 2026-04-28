@@ -7,30 +7,28 @@ import QrPanel from "../components/QrPanel.vue";
 </script>
 
 <template>
-  <div class="h-full grid grid-cols-[1fr_360px] grid-rows-[1fr_auto] gap-4 p-6">
-    <!-- main: song library -->
-    <div class="overflow-y-auto pr-2">
-      <h2 class="text-lg font-semibold mb-3">曲库</h2>
-      <SongList
-        variant="card"
-        grid-class="grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
-        :limit="200"
-      />
-    </div>
-
-    <!-- right column: now playing + controls + QR -->
-    <aside class="flex flex-col gap-4 overflow-y-auto">
+  <div class="flex h-full gap-6 p-6 overflow-hidden">
+    <!-- LEFT: hero + library catalog -->
+    <section class="flex-1 flex flex-col min-w-0">
       <NowPlayingCard size="hero" />
-      <Controls />
-      <QrPanel size="hero" />
-    </aside>
-
-    <!-- bottom: upcoming queue strip -->
-    <section class="col-span-2 border-t border-white/5 pt-4">
-      <div class="flex items-baseline justify-between mb-2">
-        <h2 class="text-sm font-semibold text-muted">接下来</h2>
+      <div class="mt-6 flex-1 overflow-y-auto pr-3 -mr-3 min-h-0">
+        <h2 class="h-section mb-4">曲库</h2>
+        <SongList
+          variant="card"
+          grid-class="grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+          :limit="200"
+        />
       </div>
-      <QueueList variant="compact" :limit="6" />
     </section>
+
+    <!-- RIGHT: sticky control column -->
+    <aside class="w-[400px] flex flex-col gap-5 min-h-0 shrink-0">
+      <QrPanel size="hero" />
+      <Controls />
+      <div class="flex-1 overflow-y-auto min-h-0">
+        <h2 class="h-section mb-3">接下来</h2>
+        <QueueList variant="compact" :limit="8" />
+      </div>
+    </aside>
   </div>
 </template>
