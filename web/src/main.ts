@@ -8,10 +8,16 @@ import NowPlaying from "./views/NowPlaying.vue";
 import Admin from "./views/Admin.vue";
 import Tv from "./views/Tv.vue";
 
+function isWideScreen(): boolean {
+  return typeof window !== "undefined" && window.innerWidth >= 1024;
+}
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: "/", redirect: "/search" },
+    // Big screens (browser on the host machine, AirPlayed to TV) get the
+    // single-page /tv layout. Phones get the tabbed UI starting at /search.
+    { path: "/", redirect: () => (isWideScreen() ? "/tv" : "/search") },
     { path: "/search", component: Search },
     { path: "/queue", component: Queue },
     { path: "/now", component: NowPlaying },
