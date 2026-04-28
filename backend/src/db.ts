@@ -70,7 +70,11 @@ export type DownloadTask = {
   error: string | null;
 };
 
-const SCHEMA = `
+// Two-stage schema: first create the tables, then run idempotent migrations
+// (ALTER TABLE) so a fresh DB and a pre-existing DB both end up with the same
+// columns, THEN create the indexes — the indexes can reference columns that
+// were only added by a migration.
+const TABLES = `
 CREATE TABLE IF NOT EXISTS songs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
@@ -78,7 +82,6 @@ CREATE TABLE IF NOT EXISTS songs (
   lang TEXT,
   genre TEXT,
   pinyin TEXT NOT NULL,
-  artist_pinyin TEXT NOT NULL DEFAULT '',
   cloud_path TEXT NOT NULL UNIQUE,
   size_bytes INTEGER,
   cached INTEGER NOT NULL DEFAULT 0,
@@ -87,10 +90,6 @@ CREATE TABLE IF NOT EXISTS songs (
   last_played_at INTEGER,
   play_count INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS idx_songs_pinyin ON songs(pinyin);
-CREATE INDEX IF NOT EXISTS idx_songs_artist_pinyin ON songs(artist_pinyin);
-CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist);
-CREATE INDEX IF NOT EXISTS idx_songs_cached ON songs(cached);
 
 CREATE TABLE IF NOT EXISTS queue (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,7 +98,6 @@ CREATE TABLE IF NOT EXISTS queue (
   added_by TEXT,
   added_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_queue_position ON queue(position);
 
 CREATE TABLE IF NOT EXISTS download_tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,26 +111,50 @@ CREATE TABLE IF NOT EXISTS download_tasks (
   finished_at INTEGER,
   error TEXT
 );
+`;
+
+const MIGRATIONS: Array<{ name: string; sql: string }> = [
+  {
+    name: "add artist_pinyin",
+    sql: "ALTER TABLE songs ADD COLUMN artist_pinyin TEXT NOT NULL DEFAULT ''",
+  },
+];
+
+const INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_songs_pinyin ON songs(pinyin);
+CREATE INDEX IF NOT EXISTS idx_songs_artist_pinyin ON songs(artist_pinyin);
+CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist);
+CREATE INDEX IF NOT EXISTS idx_songs_cached ON songs(cached);
+CREATE INDEX IF NOT EXISTS idx_queue_position ON queue(position);
 CREATE INDEX IF NOT EXISTS idx_dl_status ON download_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_dl_song ON download_tasks(song_id);
 `;
 
 export type Db = DatabaseSyncInstance;
 
+function applyMigrations(db: Db) {
+  for (const m of MIGRATIONS) {
+    try {
+      db.exec(m.sql);
+    } catch (err) {
+      // SQLite throws on ADD COLUMN when the column already exists; that's
+      // expected for an already-migrated DB. Anything else we surface.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/duplicate column name/i.test(msg)) {
+        console.warn(`[db] migration "${m.name}" skipped: ${msg}`);
+      }
+    }
+  }
+}
+
 export function openDb(filePath: string): Db {
   mkdirSync(dirname(resolve(filePath)), { recursive: true });
   const db = new DatabaseSync(resolve(filePath));
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
-  db.exec(SCHEMA);
-  // Migration: pre-existing DBs that didn't have artist_pinyin yet.
-  try {
-    db.exec(
-      "ALTER TABLE songs ADD COLUMN artist_pinyin TEXT NOT NULL DEFAULT ''",
-    );
-  } catch {
-    /* already added */
-  }
+  db.exec(TABLES);
+  applyMigrations(db);
+  db.exec(INDEXES);
   return db;
 }
 
@@ -140,7 +162,9 @@ export function openDb(filePath: string): Db {
 export function openInMemoryDb(): Db {
   const db = new DatabaseSync(":memory:");
   db.exec("PRAGMA foreign_keys = ON");
-  db.exec(SCHEMA);
+  db.exec(TABLES);
+  applyMigrations(db);
+  db.exec(INDEXES);
   return db;
 }
 
