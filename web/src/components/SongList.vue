@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from "vue";
-import { RouterLink } from "vue-router";
+import { useRoute, useRouter, RouterLink } from "vue-router";
 import { api, type Song } from "../lib/api";
 import SongRow from "./SongRow.vue";
 void RouterLink; // referenced in template
@@ -37,7 +37,13 @@ watch(q, (val) => {
   debounceTimer = setTimeout(() => run(val), 150);
 });
 
+const route = useRoute();
+const router = useRouter();
+
 onMounted(async () => {
+  // Honor ?artist=… in the URL so /artists can deep-link us into a filter.
+  const fromUrl = (route.query.artist as string | undefined) ?? null;
+  if (fromUrl) selectedArtist.value = fromUrl;
   await run("");
   try {
     const r = await api.popularArtists();
@@ -46,6 +52,17 @@ onMounted(async () => {
     /* not fatal */
   }
 });
+
+watch(
+  () => route.query.artist,
+  (v) => {
+    const next = (v as string | undefined) ?? null;
+    if (next !== selectedArtist.value) {
+      selectedArtist.value = next;
+      run("");
+    }
+  },
+);
 
 async function run(query: string) {
   loading.value = true;
@@ -74,7 +91,17 @@ async function run(query: string) {
 function selectArtist(name: string | null) {
   selectedArtist.value = selectedArtist.value === name ? null : name;
   q.value = "";
+  // Reflect the selection in the URL so it survives a refresh and the
+  // browser history "back" button.
+  const query = { ...route.query };
+  if (selectedArtist.value) query.artist = selectedArtist.value;
+  else delete query.artist;
+  router.replace({ path: route.path, query });
   run("");
+}
+
+function openArtists() {
+  router.push("/artists");
 }
 
 async function add(song: Song, top: boolean) {
@@ -121,6 +148,9 @@ async function add(song: Song, top: boolean) {
           class="ml-1.5"
           :class="selectedArtist === a.artist ? 'text-white/70' : 'text-muted'"
         >{{ a.count }}</span>
+      </button>
+      <button class="chip-default font-medium" @click="openArtists">
+        全部歌手 →
       </button>
     </div>
 

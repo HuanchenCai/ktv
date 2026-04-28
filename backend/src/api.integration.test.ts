@@ -26,7 +26,7 @@ function makeMpv() {
     },
     toggleVocal: async (...args: unknown[]) => {
       calls.push({ fn: "toggleVocal", args });
-      return "both" as const;
+      return "L" as const;
     },
     pause: async () => {
       calls.push({ fn: "pause", args: [] });

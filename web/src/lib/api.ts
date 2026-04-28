@@ -119,6 +119,9 @@ export const api = {
   replay() {
     return request<{ ok: true }>("/api/control/replay", { method: "POST" });
   },
+  reopen() {
+    return request<{ ok: boolean }>("/api/control/reopen", { method: "POST" });
+  },
   toggleVocal() {
     return request<{ ok: true }>("/api/control/toggle-vocal", {
       method: "POST",

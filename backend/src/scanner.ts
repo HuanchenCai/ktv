@@ -130,14 +130,15 @@ export class Scanner {
 
     const insert = this.db.prepare(
       `INSERT INTO songs
-       (title, artist, lang, genre, pinyin, cloud_path, size_bytes, vocal_channel)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       (title, artist, lang, genre, pinyin, artist_pinyin, cloud_path, size_bytes, vocal_channel)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(cloud_path) DO UPDATE SET
          title=excluded.title,
          artist=excluded.artist,
          lang=excluded.lang,
          genre=excluded.genre,
          pinyin=excluded.pinyin,
+         artist_pinyin=excluded.artist_pinyin,
          size_bytes=excluded.size_bytes`,
     );
     const exists = this.db.prepare(
@@ -163,6 +164,7 @@ export class Scanner {
             parentDir,
           );
           const pinyinInitials = toPinyinInitials(title);
+          const artistPinyin = toPinyinInitials(artist);
           const already = exists.get(childPath);
           insert.run(
             title,
@@ -170,6 +172,7 @@ export class Scanner {
             lang,
             genre,
             pinyinInitials,
+            artistPinyin,
             childPath,
             item.size,
             "L",

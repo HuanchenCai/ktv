@@ -31,11 +31,15 @@ export async function importLocalLibrary(
 
   const insert = db.prepare(
     `INSERT INTO songs
-     (title, artist, lang, genre, pinyin, cloud_path, size_bytes,
+     (title, artist, lang, genre, pinyin, artist_pinyin, cloud_path, size_bytes,
       cached, local_path, vocal_channel)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 'L')
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'L')
      ON CONFLICT(cloud_path) DO UPDATE SET
-       cached=1, local_path=excluded.local_path, size_bytes=excluded.size_bytes`,
+       cached=1,
+       local_path=excluded.local_path,
+       size_bytes=excluded.size_bytes,
+       artist=excluded.artist,
+       artist_pinyin=excluded.artist_pinyin`,
   );
 
   async function walk(dir: string, artistDir: string) {
@@ -60,6 +64,7 @@ export async function importLocalLibrary(
         const parentDir = basename(dirname(full));
         const { title, artist, lang, genre } = parseFilename(name, parentDir);
         const pinyin = toPinyinInitials(title);
+        const artistPinyin = toPinyinInitials(artist);
         const cloudPath = `local://${full.replace(/\\/g, "/")}`;
         try {
           insert.run(
@@ -68,6 +73,7 @@ export async function importLocalLibrary(
             lang,
             genre,
             pinyin,
+            artistPinyin,
             cloudPath,
             st.size,
             full,

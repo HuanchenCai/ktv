@@ -456,10 +456,27 @@ export class Orchestrator extends EventEmitter {
 
   async toggleVocal(): Promise<void> {
     if (!this.currentSongId) return;
+    await this.mpv.toggleVocal();
+  }
+
+  /**
+   * Reload the currently-playing song from the start. Useful when mpv's
+   * window was closed manually (X) or AirPlay/mirror dropped — calling this
+   * makes mpv re-open the file and the host re-pushes it to the TV.
+   */
+  async reopenCurrent(): Promise<boolean> {
+    if (!this.currentSongId) return false;
     const song = this.db
       .prepare("SELECT * FROM songs WHERE id = ?")
-      .get(this.currentSongId) as Song;
-    await this.mpv.toggleVocal(song.vocal_channel);
+      .get(this.currentSongId) as Song | undefined;
+    if (!song?.local_path || !existsSync(song.local_path)) return false;
+    try {
+      await this.mpv.loadFile(song.local_path, song.vocal_channel);
+      return true;
+    } catch (err) {
+      console.error("[orchestrator] reopen failed", err);
+      return false;
+    }
   }
 
   async swapVocalChannel(): Promise<void> {

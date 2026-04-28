@@ -20,9 +20,11 @@ export async function registerSongsRoutes(
       const where: string[] = [];
       const params: Array<string | number> = [];
       if (q) {
-        where.push("(pinyin LIKE ? OR title LIKE ? OR artist LIKE ?)");
+        where.push(
+          "(pinyin LIKE ? OR artist_pinyin LIKE ? OR title LIKE ? OR artist LIKE ?)",
+        );
         const like = `%${q}%`;
-        params.push(like, like, like);
+        params.push(like, like, like, like);
       }
       if (artist) {
         where.push("artist = ?");

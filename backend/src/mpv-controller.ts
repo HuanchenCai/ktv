@@ -149,15 +149,25 @@ export class MpvController extends EventEmitter {
       "--idle=yes",
       // No --force-window: mpv stays headless when nothing is queued. The
       // browser /tv view (AirPlayed/projected to the TV) is the idle screen.
-      // mpv only pops a window when a song actually loads, then ontop +
-      // fullscreen pushes it on top of the browser for the duration of play.
+      // mpv only pops a window when a song actually loads.
       "--ontop=yes",
       "--title=KTV",
-      "--cursor-autohide=1000", // hide cursor over the video after 1s
+      "--cursor-autohide=1000",
       "--osc=no", // we draw our own controls in the web UI
       `--input-conf=${this.inputConfPath}`,
     ];
-    if (this.fullscreen) mpvArgs.push("--fullscreen");
+    if (this.fullscreen) {
+      // Use BORDERLESS WINDOWED that fills the screen, not exclusive
+      // fullscreen. Going exclusive fullscreen on Windows can change the
+      // display refresh rate / mode, which kicks Miracast / Smart View /
+      // AirPlay mirrors off the TV. Borderless windowed looks identical to
+      // the user but is just a regular maximized window underneath.
+      mpvArgs.push(
+        "--no-border",
+        "--geometry=100%x100%+0+0",
+        "--keep-open=yes",
+      );
+    }
 
     // Decode the QR PNG into raw BGRA bytes upfront. mpv's `overlay-add` IPC
     // command consumes a raw BGRA file and draws on the OSD layer — that's
@@ -306,20 +316,16 @@ export class MpvController extends EventEmitter {
   }
 
   /**
-   * Two-state toggle between the song's "原唱" (vocal) and "伴唱"
-   * (accompaniment). No mute / no "both" middle state — that confused users.
+   * Flip between L and R channel (or between the two audio tracks for
+   * multi-stream files). Doesn't try to label them as 原唱 vs 伴唱 — the
+   * convention varies per publisher and per file, and the DB's
+   * `vocal_channel` field is unreliable. Users learn which side has the
+   * vocal by ear and just keep tapping the toggle until they like it.
    */
-  async toggleVocal(
-    vocalChannel: "L" | "R",
-  ): Promise<"original" | "accompaniment"> {
-    const accompaniment: "L" | "R" = vocalChannel === "L" ? "R" : "L";
-    if (this.currentChannel === vocalChannel) {
-      await this.setChannel(accompaniment);
-      return "accompaniment";
-    } else {
-      await this.setChannel(vocalChannel);
-      return "original";
-    }
+  async toggleVocal(): Promise<"L" | "R"> {
+    const next: "L" | "R" = this.currentChannel === "L" ? "R" : "L";
+    await this.setChannel(next);
+    return next;
   }
 
   async pause(): Promise<void> {

@@ -19,8 +19,8 @@ async function flash(label: string, fn: () => Promise<unknown>) {
 
 const doSkip = () => flash("切歌", () => api.skip());
 const doReplay = () => flash("重唱", () => api.replay());
-const doToggle = () => flash("原唱/伴唱", () => api.toggleVocal());
-const doSwap = () => flash("L/R 反转", () => api.swapVocalChannel());
+const doToggle = () => flash("切声道", () => api.toggleVocal());
+const doReopen = () => flash("重开视频", () => api.reopen());
 const setChan = (c: "L" | "R" | "both") =>
   flash(`声道 ${c}`, () => api.setChannel(c));
 async function onVolume() {
@@ -41,7 +41,7 @@ async function onVolume() {
     </div>
 
     <button class="btn-primary w-full py-2.5 text-sm" @click="doToggle">
-      🎙 原唱 / 伴唱
+      🎙 切原唱 / 伴唱
     </button>
 
     <div class="grid grid-cols-3 gap-2">
@@ -70,7 +70,13 @@ async function onVolume() {
 
     <div class="grid grid-cols-3 gap-2">
       <button class="btn-ghost text-xs py-1.5" @click="doReplay">↻ 重唱</button>
-      <button class="btn-ghost text-xs py-1.5" @click="doSwap">↔ L/R 反</button>
+      <button
+        class="btn-ghost text-xs py-1.5"
+        @click="doReopen"
+        title="窗口被关掉了？再开"
+      >
+        🔁 重开视频
+      </button>
       <button class="btn-ghost text-xs py-1.5" @click="doSkip">⏭ 切歌</button>
     </div>
 

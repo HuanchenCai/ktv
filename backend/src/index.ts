@@ -29,6 +29,23 @@ async function main() {
   const dbPath = resolve(root, "data", "ktv.db");
   const db = openDb(dbPath);
 
+  // Backfill artist_pinyin for rows that pre-date the column. The migration
+  // sets the column to '' by default — fill from the JS pinyin lib so old
+  // libraries work with the new artist-pinyin search without needing a rescan.
+  const stale = db
+    .prepare(
+      "SELECT id, artist FROM songs WHERE artist_pinyin = '' AND artist != ''",
+    )
+    .all() as Array<{ id: number; artist: string }>;
+  if (stale.length > 0) {
+    const { toPinyinInitials } = await import("./pinyin.ts");
+    const upd = db.prepare("UPDATE songs SET artist_pinyin = ? WHERE id = ?");
+    for (const row of stale) {
+      upd.run(toPinyinInitials(row.artist), row.id);
+    }
+    console.log(`[main] backfilled artist_pinyin for ${stale.length} songs`);
+  }
+
   // --- OpenList subprocess --------------------------------------------------
 
   const openlistUrl = `http://localhost:${config.openlist.port}`;

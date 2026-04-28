@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS songs (
   lang TEXT,
   genre TEXT,
   pinyin TEXT NOT NULL,
+  artist_pinyin TEXT NOT NULL DEFAULT '',
   cloud_path TEXT NOT NULL UNIQUE,
   size_bytes INTEGER,
   cached INTEGER NOT NULL DEFAULT 0,
@@ -87,6 +88,7 @@ CREATE TABLE IF NOT EXISTS songs (
   play_count INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_songs_pinyin ON songs(pinyin);
+CREATE INDEX IF NOT EXISTS idx_songs_artist_pinyin ON songs(artist_pinyin);
 CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist);
 CREATE INDEX IF NOT EXISTS idx_songs_cached ON songs(cached);
 
@@ -123,6 +125,14 @@ export function openDb(filePath: string): Db {
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(SCHEMA);
+  // Migration: pre-existing DBs that didn't have artist_pinyin yet.
+  try {
+    db.exec(
+      "ALTER TABLE songs ADD COLUMN artist_pinyin TEXT NOT NULL DEFAULT ''",
+    );
+  } catch {
+    /* already added */
+  }
   return db;
 }
 
