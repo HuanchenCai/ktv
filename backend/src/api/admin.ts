@@ -6,6 +6,7 @@ import { importLocalLibrary } from "../local-importer.ts";
 import { fetchPortraits, type PortraitProgress } from "../portrait-fetcher.ts";
 import type { ScanProgress } from "../scanner.ts";
 import type { ImportProgress } from "../local-importer.ts";
+import { pickFolder } from "../folder-picker.ts";
 import QRCode from "qrcode";
 import { networkInterfaces } from "node:os";
 import { EventEmitter } from "node:events";
@@ -114,6 +115,23 @@ export async function registerAdminRoutes(
       running: portraitJob !== null,
       progress: lastPortraitProgress,
     };
+  });
+
+  /**
+   * Pop up a native folder picker on the host machine and return whatever
+   * the user selected. Used by the admin page so the user can graphically
+   * choose a folder instead of typing its absolute path. Network shares
+   * (UNC) are reachable from the picker too.
+   */
+  fastify.post("/api/admin/pick-folder", async (_req, rep) => {
+    try {
+      const path = await pickFolder(libraryPath);
+      return { path };
+    } catch (err) {
+      return rep
+        .code(500)
+        .send({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   /**

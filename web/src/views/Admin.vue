@@ -19,6 +19,7 @@ const scanning = ref(false);
 const importResult = ref<string>("");
 const importing = ref(false);
 const importPath = ref<string>("");
+const picking = ref(false);
 const error = ref("");
 
 const portraitProgress = ref<{
@@ -94,6 +95,21 @@ async function runImportLocal() {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
     importing.value = false;
+  }
+}
+
+async function pickFolder() {
+  picking.value = true;
+  error.value = "";
+  try {
+    const r = await api.pickFolder();
+    if (r.path) {
+      importPath.value = r.path;
+    }
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    picking.value = false;
   }
 }
 </script>
@@ -215,22 +231,31 @@ async function runImportLocal() {
     </div>
 
     <div class="card space-y-2">
-      <div class="font-semibold">导入本地已有 MKV（调试用）</div>
+      <div class="font-semibold">导入本地已有 MKV</div>
       <div class="text-xs text-muted">
-        扫描指定目录下的 .mkv/.mp4 文件，直接标记为"已缓存"入库。
-        绕过百度盘配置快速验证播放/切声道。
+        扫描所选目录下的 .mkv/.mp4 文件，标记为"已缓存"入库。支持网络
+        共享（UNC 路径）。
       </div>
-      <input
-        v-model="importPath"
-        class="input text-sm"
-        placeholder="留空 = 用 config.library_path；或填: H:\\BaiduNetdiskDownload"
-      />
+      <div class="flex items-center gap-2">
+        <input
+          v-model="importPath"
+          class="input text-sm flex-1"
+          placeholder="留空 = 用 config.library_path"
+        />
+        <button
+          class="btn-ghost text-sm whitespace-nowrap"
+          :disabled="picking"
+          @click="pickFolder"
+        >
+          {{ picking ? "选择中..." : "📁 浏览..." }}
+        </button>
+      </div>
       <button
-        class="btn-ghost"
+        class="btn-primary text-sm"
         :disabled="importing"
         @click="runImportLocal"
       >
-        {{ importing ? "导入中..." : "导入本地文件" }}
+        {{ importing ? "导入中..." : "开始导入" }}
       </button>
       <div v-if="importResult" class="text-sm text-green-400">
         {{ importResult }}

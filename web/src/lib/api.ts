@@ -227,4 +227,10 @@ export const api = {
       body: JSON.stringify(path ? { path } : {}),
     });
   },
+  pickFolder() {
+    return request<{ path: string | null }>("/api/admin/pick-folder", {
+      method: "POST",
+      body: "{}",
+    });
+  },
 };
