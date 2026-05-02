@@ -4,12 +4,16 @@ import type { OpenListClient } from "../openlist-client.ts";
 import type { Db } from "../db.ts";
 import { importLocalLibrary } from "../local-importer.ts";
 import { fetchPortraits, type PortraitProgress } from "../portrait-fetcher.ts";
+import type { ScanProgress } from "../scanner.ts";
+import type { ImportProgress } from "../local-importer.ts";
 import QRCode from "qrcode";
 import { networkInterfaces } from "node:os";
 import { EventEmitter } from "node:events";
 
 export type AdminEvents = EventEmitter & {
   emit(event: "portrait.progress", data: PortraitProgress): boolean;
+  emit(event: "scan.progress", data: ScanProgress): boolean;
+  emit(event: "import.progress", data: ImportProgress): boolean;
 };
 
 export async function registerAdminRoutes(
@@ -31,6 +35,7 @@ export async function registerAdminRoutes(
       try {
         const result = await scanner.scan({
           maxDepth: req.body?.max_depth ?? 3,
+          onProgress: (p) => events?.emit("scan.progress", p),
         });
         return result;
       } catch (err) {
@@ -124,7 +129,9 @@ export async function registerAdminRoutes(
       }
       const target = req.body?.path?.trim() || libraryPath;
       try {
-        const result = await importLocalLibrary(db, target);
+        const result = await importLocalLibrary(db, target, (p) =>
+          events?.emit("import.progress", p),
+        );
         return { ...result, scanned_path: target };
       } catch (err) {
         return rep

@@ -6,7 +6,9 @@ type WsMessage =
   | { type: "queue.updated" }
   | { type: "download.progress"; payload: unknown }
   | { type: "player.state"; payload: unknown }
-  | { type: "portrait.progress"; payload: unknown };
+  | { type: "portrait.progress"; payload: unknown }
+  | { type: "scan.progress"; payload: unknown }
+  | { type: "import.progress"; payload: unknown };
 
 // @fastify/websocket v10+ passes the WebSocket itself as the first argument
 // (older versions wrapped it in `{ socket }`). The minimal shape we need:
@@ -43,6 +45,12 @@ export async function registerWs(
   );
   adminEvents?.on("portrait.progress", (p) =>
     broadcast({ type: "portrait.progress", payload: p }),
+  );
+  adminEvents?.on("scan.progress", (p) =>
+    broadcast({ type: "scan.progress", payload: p }),
+  );
+  adminEvents?.on("import.progress", (p) =>
+    broadcast({ type: "import.progress", payload: p }),
   );
 
   const wsHandler = (sock: WsLike) => {

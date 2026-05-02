@@ -113,4 +113,127 @@ export async function registerSongsRoutes(
     ).c;
     return { total, cached };
   });
+
+  /** Rich stats for the library management page. */
+  fastify.get("/api/library/stats", async () => {
+    const totalsRow = db
+      .prepare(
+        `SELECT
+           COUNT(*) AS total,
+           SUM(CASE WHEN cached = 1 THEN 1 ELSE 0 END) AS cached,
+           COALESCE(SUM(CASE WHEN cached = 1 THEN size_bytes ELSE 0 END), 0) AS bytes
+         FROM songs`,
+      )
+      .get() as { total: number; cached: number; bytes: number };
+    const artistCount = (
+      db
+        .prepare(
+          "SELECT COUNT(DISTINCT artist) AS c FROM songs WHERE artist != ''",
+        )
+        .get() as { c: number }
+    ).c;
+    const byLang = db
+      .prepare(
+        `SELECT COALESCE(lang, '未知') AS lang, COUNT(*) AS count
+         FROM songs GROUP BY lang ORDER BY count DESC`,
+      )
+      .all() as Array<{ lang: string; count: number }>;
+    const topArtists = db
+      .prepare(
+        `SELECT artist, COUNT(*) AS count FROM songs
+         WHERE artist != ''
+         GROUP BY artist ORDER BY count DESC LIMIT 10`,
+      )
+      .all() as Array<{ artist: string; count: number }>;
+    return {
+      total: totalsRow.total,
+      cached: totalsRow.cached,
+      bytes: totalsRow.bytes,
+      artist_count: artistCount,
+      by_lang: byLang,
+      top_artists: topArtists,
+    };
+  });
+
+  /**
+   * Paginated, sortable, filterable list for the library table.
+   * Query params:
+   *   page (1-based, default 1)
+   *   limit (default 50, max 200)
+   *   sort: title | artist | last_played_at | play_count | size_bytes
+   *   order: asc | desc
+   *   filter: text (matches title/artist/pinyin/artist_pinyin)
+   *   artist, lang: exact match filters
+   *   cached_only: "1" to restrict to cached
+   */
+  fastify.get<{
+    Querystring: {
+      page?: string;
+      limit?: string;
+      sort?: string;
+      order?: string;
+      filter?: string;
+      artist?: string;
+      lang?: string;
+      cached_only?: string;
+    };
+  }>("/api/library/songs", async (req) => {
+    const page = Math.max(1, parseInt(req.query.page ?? "1", 10) || 1);
+    const limit = Math.min(
+      200,
+      Math.max(1, parseInt(req.query.limit ?? "50", 10) || 50),
+    );
+    const sortAllow = new Set([
+      "title",
+      "artist",
+      "last_played_at",
+      "play_count",
+      "size_bytes",
+      "id",
+    ]);
+    const sort = sortAllow.has(req.query.sort ?? "")
+      ? (req.query.sort as string)
+      : "id";
+    const order = req.query.order?.toLowerCase() === "asc" ? "ASC" : "DESC";
+
+    const where: string[] = [];
+    const params: Array<string | number> = [];
+    if (req.query.filter?.trim()) {
+      const like = `%${req.query.filter.trim()}%`;
+      where.push(
+        "(title LIKE ? OR artist LIKE ? OR pinyin LIKE ? OR artist_pinyin LIKE ?)",
+      );
+      params.push(like, like, like, like);
+    }
+    if (req.query.artist) {
+      where.push("artist = ?");
+      params.push(req.query.artist);
+    }
+    if (req.query.lang) {
+      where.push("lang = ?");
+      params.push(req.query.lang);
+    }
+    if (req.query.cached_only === "1") where.push("cached = 1");
+    const whereClause = where.length ? " WHERE " + where.join(" AND ") : "";
+
+    const total = (
+      db
+        .prepare(`SELECT COUNT(*) AS c FROM songs${whereClause}`)
+        .get(...params) as { c: number }
+    ).c;
+
+    // NULLS-LAST so songs that never played sort to the bottom by date.
+    const orderClause =
+      sort === "last_played_at"
+        ? `ORDER BY (last_played_at IS NULL), last_played_at ${order}`
+        : `ORDER BY ${sort} ${order}`;
+    const offset = (page - 1) * limit;
+    const rows = db
+      .prepare(
+        `SELECT * FROM songs${whereClause} ${orderClause} LIMIT ? OFFSET ?`,
+      )
+      .all(...params, limit, offset);
+
+    return { songs: rows, total, page, limit };
+  });
 }

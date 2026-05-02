@@ -41,6 +41,8 @@ const wsDotClass = computed(() => ({
         </div>
       </div>
       <div class="flex items-center gap-3 text-xs text-muted">
+        <RouterLink to="/library" class="hover:text-white transition-colors">曲库</RouterLink>
+        <span class="text-border">|</span>
         <RouterLink to="/admin" class="hover:text-white transition-colors">管理</RouterLink>
         <span class="text-border">|</span>
         <RouterLink to="/search" class="hover:text-white transition-colors">手机版预览</RouterLink>

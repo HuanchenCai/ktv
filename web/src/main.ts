@@ -8,6 +8,7 @@ import NowPlaying from "./views/NowPlaying.vue";
 import Admin from "./views/Admin.vue";
 import Tv from "./views/Tv.vue";
 import Artists from "./views/Artists.vue";
+import Library from "./views/Library.vue";
 
 function isWideScreen(): boolean {
   return typeof window !== "undefined" && window.innerWidth >= 1024;
@@ -25,6 +26,7 @@ const router = createRouter({
     { path: "/admin", component: Admin },
     { path: "/tv", component: Tv, meta: { layout: "tv" } },
     { path: "/artists", component: Artists },
+    { path: "/library", component: Library },
   ],
 });
 

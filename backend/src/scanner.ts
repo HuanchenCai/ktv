@@ -104,6 +104,15 @@ function isVideoFile(name: string): boolean {
   return VIDEO_EXTS.has(name.substring(i).toLowerCase());
 }
 
+export type ScanProgress = {
+  phase: "listing" | "indexing" | "done";
+  current_dir?: string;
+  files_seen: number;
+  inserted: number;
+  updated: number;
+  skipped: number;
+};
+
 export class Scanner {
   constructor(
     private db: Db,
@@ -119,7 +128,11 @@ export class Scanner {
    * to recursive if we find more subdirs.
    */
   async scan(
-    options: { maxDepth?: number; progress?: (msg: string) => void } = {},
+    options: {
+      maxDepth?: number;
+      progress?: (msg: string) => void;
+      onProgress?: (p: ScanProgress) => void;
+    } = {},
   ): Promise<{ inserted: number; updated: number; skipped: number }> {
     const maxDepth = options.maxDepth ?? 3;
     const progress = options.progress ?? ((m) => console.log(`[scan] ${m}`));
@@ -145,8 +158,22 @@ export class Scanner {
       "SELECT id FROM songs WHERE cloud_path = ?",
     );
 
+    const onProgress = options.onProgress;
+    let filesSeen = 0;
+    const tick = (phase: ScanProgress["phase"], dir?: string) => {
+      onProgress?.({
+        phase,
+        current_dir: dir,
+        files_seen: filesSeen,
+        inserted,
+        updated,
+        skipped,
+      });
+    };
+
     const walk = async (path: string, depth: number, parentDir: string) => {
       if (depth > maxDepth) return;
+      tick("listing", path);
       let items: FsListItem[];
       try {
         items = await this.openlist.list(path);
@@ -159,6 +186,7 @@ export class Scanner {
         if (item.is_dir) {
           await walk(childPath, depth + 1, item.name);
         } else if (isVideoFile(item.name)) {
+          filesSeen++;
           const { title, artist, lang, genre } = parseFilename(
             item.name,
             parentDir,
@@ -179,6 +207,8 @@ export class Scanner {
           );
           if (already) updated++;
           else inserted++;
+          // Throttle progress emits to every 25 files (avoid WS flood).
+          if (filesSeen % 25 === 0) tick("indexing", path);
         } else {
           skipped++;
         }
@@ -186,7 +216,9 @@ export class Scanner {
     };
 
     progress(`scanning ${this.baiduRoot}`);
+    tick("listing");
     await walk(this.baiduRoot, 0, "");
+    tick("done");
     progress(`done — inserted=${inserted} updated=${updated} skipped=${skipped}`);
     return { inserted, updated, skipped };
   }
