@@ -46,6 +46,34 @@ async function main() {
     console.log(`[main] backfilled artist_pinyin for ${stale.length} songs`);
   }
 
+  // Drop locally-imported songs whose cloud_path doesn't match the current
+  // library_path. This handles the case where the user changed library_path
+  // (e.g. switched from a mapped drive Z: to a UNC path \\nas\share). Without
+  // this, a re-scan of the new path inserts a parallel set of rows and the
+  // catalog ~doubles. Baidu-pulled songs (cloud_path doesn't start with
+  // "local://") and artist_portraits are preserved.
+  {
+    const expectedPrefix =
+      "local://" + config.library_path.replace(/\\/g, "/");
+    const orphanCount = (
+      db
+        .prepare(
+          "SELECT COUNT(*) AS c FROM songs WHERE cloud_path LIKE 'local://%' AND cloud_path NOT LIKE ?",
+        )
+        .get(expectedPrefix + "%") as { c: number }
+    ).c;
+    if (orphanCount > 0) {
+      const res = db
+        .prepare(
+          "DELETE FROM songs WHERE cloud_path LIKE 'local://%' AND cloud_path NOT LIKE ?",
+        )
+        .run(expectedPrefix + "%");
+      console.log(
+        `[main] library_path changed → dropped ${res.changes} stale local songs`,
+      );
+    }
+  }
+
   // --- OpenList subprocess --------------------------------------------------
 
   const openlistUrl = `http://localhost:${config.openlist.port}`;
