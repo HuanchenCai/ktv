@@ -111,6 +111,17 @@ CREATE TABLE IF NOT EXISTS download_tasks (
   finished_at INTEGER,
   error TEXT
 );
+
+CREATE TABLE IF NOT EXISTS artist_portraits (
+  artist TEXT PRIMARY KEY,
+  status TEXT NOT NULL,           -- 'ok' | 'missed'
+  rel_path TEXT,                  -- e.g. portraits/<sha1>.jpg, relative to project root
+  source TEXT,                    -- 'wikidata' | 'wikipedia-zh' | 'wikipedia-en' | ...
+  license TEXT,
+  attribution TEXT,
+  source_url TEXT,
+  fetched_at INTEGER NOT NULL
+);
 `;
 
 const MIGRATIONS: Array<{ name: string; sql: string }> = [

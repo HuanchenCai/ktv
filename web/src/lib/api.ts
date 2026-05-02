@@ -89,8 +89,39 @@ export const api = {
   },
   popularArtists() {
     return request<{
-      artists: Array<{ artist: string; count: number }>;
+      artists: Array<{
+        artist: string;
+        count: number;
+        portrait: string | null;
+      }>;
     }>("/api/popular-artists");
+  },
+  fetchPortraits(opts?: { min_song_count?: number; force?: boolean }) {
+    return request<{
+      running: boolean;
+      progress: {
+        total: number;
+        done: number;
+        ok: number;
+        missed: number;
+        current: string | null;
+      } | null;
+    }>("/api/admin/fetch-portraits", {
+      method: "POST",
+      body: JSON.stringify(opts ?? {}),
+    });
+  },
+  portraitProgress() {
+    return request<{
+      running: boolean;
+      progress: {
+        total: number;
+        done: number;
+        ok: number;
+        missed: number;
+        current: string | null;
+      } | null;
+    }>("/api/admin/portrait-progress");
   },
   listQueue() {
     return request<{ items: QueueItem[] }>("/api/queue");

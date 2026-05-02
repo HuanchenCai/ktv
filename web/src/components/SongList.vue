@@ -3,6 +3,7 @@ import { ref, watch, onMounted } from "vue";
 import { useRoute, useRouter, RouterLink } from "vue-router";
 import { api, type Song } from "../lib/api";
 import SongRow from "./SongRow.vue";
+import PopularArtistsRail from "./PopularArtistsRail.vue";
 void RouterLink; // referenced in template
 
 const props = withDefaults(
@@ -27,8 +28,23 @@ const songs = ref<Song[]>([]);
 const error = ref("");
 const queuedIds = ref<Set<number>>(new Set());
 const heading = ref("热门");
-const popular = ref<Array<{ artist: string; count: number }>>([]);
 const selectedArtist = ref<string | null>(null);
+const portraitByArtist = ref<Map<string, string>>(new Map());
+
+async function loadPortraits() {
+  try {
+    const r = (await fetch("/api/artists").then((rr) => rr.json())) as {
+      artists: Array<{ artist: string; portrait: string | null }>;
+    };
+    const map = new Map<string, string>();
+    for (const a of r.artists) {
+      if (a.portrait) map.set(a.artist, a.portrait);
+    }
+    portraitByArtist.value = map;
+  } catch {
+    /* not fatal */
+  }
+}
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -41,16 +57,10 @@ const route = useRoute();
 const router = useRouter();
 
 onMounted(async () => {
-  // Honor ?artist=… in the URL so /artists can deep-link us into a filter.
+  // Honor ?artist=… in the URL so /artists or the rail can deep-link a filter.
   const fromUrl = (route.query.artist as string | undefined) ?? null;
   if (fromUrl) selectedArtist.value = fromUrl;
-  await run("");
-  try {
-    const r = await api.popularArtists();
-    popular.value = r.artists;
-  } catch {
-    /* not fatal */
-  }
+  await Promise.all([run(""), loadPortraits()]);
 });
 
 watch(
@@ -100,10 +110,6 @@ function selectArtist(name: string | null) {
   run("");
 }
 
-function openArtists() {
-  router.push("/artists");
-}
-
 async function add(song: Song, top: boolean) {
   queuedIds.value.add(song.id);
   try {
@@ -126,33 +132,15 @@ async function add(song: Song, top: boolean) {
       inputmode="search"
     />
 
-    <div
-      v-if="popular.length"
-      class="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1"
+    <PopularArtistsRail :size="variant === 'card' ? 'hero' : 'compact'" />
+
+    <button
+      v-if="selectedArtist"
+      class="chip chip-active"
+      @click="selectArtist(null)"
     >
-      <button
-        v-if="selectedArtist"
-        class="chip chip-active"
-        @click="selectArtist(null)"
-      >
-        × 清除筛选
-      </button>
-      <button
-        v-for="a in popular"
-        :key="a.artist"
-        :class="selectedArtist === a.artist ? 'chip-active' : 'chip-default'"
-        @click="selectArtist(a.artist)"
-      >
-        {{ a.artist }}
-        <span
-          class="ml-1.5"
-          :class="selectedArtist === a.artist ? 'text-white/70' : 'text-muted'"
-        >{{ a.count }}</span>
-      </button>
-      <button class="chip-default font-medium" @click="openArtists">
-        全部歌手 →
-      </button>
-    </div>
+      × 清除筛选 {{ selectedArtist }}
+    </button>
 
     <div v-if="error" class="text-red-400 text-sm">{{ error }}</div>
 
@@ -174,6 +162,7 @@ async function add(song: Song, top: boolean) {
         :key="song.id"
         :song="song"
         :queued="queuedIds.has(song.id)"
+        :artist-portrait="portraitByArtist.get(song.artist) ?? null"
         variant="row"
         @queue="(s) => add(s, false)"
         @top="(s) => add(s, true)"
@@ -190,6 +179,7 @@ async function add(song: Song, top: boolean) {
         :key="song.id"
         :song="song"
         :queued="queuedIds.has(song.id)"
+        :artist-portrait="portraitByArtist.get(song.artist) ?? null"
         variant="card"
         @queue="(s) => add(s, false)"
         @top="(s) => add(s, true)"

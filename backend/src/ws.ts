@@ -1,10 +1,12 @@
 import type { FastifyInstance } from "fastify";
+import type { EventEmitter } from "node:events";
 import type { Orchestrator } from "./queue-orchestrator.ts";
 
 type WsMessage =
   | { type: "queue.updated" }
   | { type: "download.progress"; payload: unknown }
-  | { type: "player.state"; payload: unknown };
+  | { type: "player.state"; payload: unknown }
+  | { type: "portrait.progress"; payload: unknown };
 
 // @fastify/websocket v10+ passes the WebSocket itself as the first argument
 // (older versions wrapped it in `{ socket }`). The minimal shape we need:
@@ -17,6 +19,7 @@ type WsLike = {
 export async function registerWs(
   fastify: FastifyInstance,
   orchestrator: Orchestrator,
+  adminEvents?: EventEmitter,
 ): Promise<void> {
   const clients = new Set<WsLike>();
 
@@ -37,6 +40,9 @@ export async function registerWs(
   );
   orchestrator.on("player.state", (state) =>
     broadcast({ type: "player.state", payload: state }),
+  );
+  adminEvents?.on("portrait.progress", (p) =>
+    broadcast({ type: "portrait.progress", payload: p }),
   );
 
   const wsHandler = (sock: WsLike) => {

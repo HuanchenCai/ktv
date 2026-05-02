@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { api } from "../lib/api";
+import { onWs } from "../lib/ws";
 
 const health = ref<{
   ok: boolean;
@@ -20,18 +21,53 @@ const importing = ref(false);
 const importPath = ref<string>("");
 const error = ref("");
 
+const portraitProgress = ref<{
+  total: number;
+  done: number;
+  ok: number;
+  missed: number;
+  current: string | null;
+} | null>(null);
+const portraitRunning = ref(false);
+const portraitMinSongs = ref(2);
+
 async function refresh() {
   try {
     health.value = await api.health();
     qr.value = await api.qr();
     const status = await fetch("/api/admin/openlist-status").then((r) => r.json());
     initialPassword.value = status.initial_password ?? null;
+    const pp = await api.portraitProgress();
+    portraitRunning.value = pp.running;
+    portraitProgress.value = pp.progress;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   }
 }
 
-onMounted(() => refresh());
+let unsub: (() => void) | null = null;
+onMounted(() => {
+  refresh();
+  unsub = onWs((msg) => {
+    if (msg.type === "portrait.progress") {
+      portraitProgress.value = msg.payload as typeof portraitProgress.value;
+      portraitRunning.value =
+        portraitProgress.value !== null &&
+        portraitProgress.value.done < portraitProgress.value.total;
+    }
+  });
+});
+onUnmounted(() => unsub?.());
+
+async function runPortraits() {
+  portraitRunning.value = true;
+  try {
+    await api.fetchPortraits({ min_song_count: portraitMinSongs.value });
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+    portraitRunning.value = false;
+  }
+}
 
 async function runScan() {
   scanning.value = true;
@@ -121,6 +157,61 @@ async function runImportLocal() {
         {{ scanning ? "扫描中..." : "开始扫描" }}
       </button>
       <div v-if="scanResult" class="text-sm text-green-400">{{ scanResult }}</div>
+    </div>
+
+    <div class="card space-y-2">
+      <div class="font-semibold">抓取歌手头像</div>
+      <div class="text-xs text-muted">
+        从 Wikipedia / Wikidata 抓歌手照片（CC-BY / CC-BY-SA）。
+        节流 1 req/s，可能需要几分钟到几十分钟。已抓的会跳过。
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="text-xs text-muted">最少歌数门槛:</label>
+        <input
+          v-model.number="portraitMinSongs"
+          type="number"
+          min="1"
+          max="20"
+          class="bg-elevated rounded px-2 py-1 text-sm w-20"
+        />
+        <button
+          class="btn-primary text-sm"
+          :disabled="portraitRunning"
+          @click="runPortraits"
+        >
+          {{ portraitRunning ? "抓取中..." : "开始抓取" }}
+        </button>
+      </div>
+      <div
+        v-if="portraitProgress"
+        class="space-y-1.5 text-xs pt-1"
+      >
+        <div class="flex items-center gap-2">
+          <div class="flex-1 h-1.5 bg-black/40 rounded overflow-hidden">
+            <div
+              class="h-full bg-accent transition-all"
+              :style="{
+                width:
+                  portraitProgress.total > 0
+                    ? (portraitProgress.done / portraitProgress.total) * 100 +
+                      '%'
+                    : '0%',
+              }"
+            ></div>
+          </div>
+          <span class="font-mono tabular-nums w-20 text-right text-muted">
+            {{ portraitProgress.done }} / {{ portraitProgress.total }}
+          </span>
+        </div>
+        <div class="flex justify-between text-muted">
+          <span>
+            ✓ {{ portraitProgress.ok }} · ✗ {{ portraitProgress.missed }}
+          </span>
+          <span v-if="portraitProgress.current" class="truncate">
+            正在: {{ portraitProgress.current }}
+          </span>
+        </div>
+      </div>
     </div>
 
     <div class="card space-y-2">

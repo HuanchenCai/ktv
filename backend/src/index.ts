@@ -189,6 +189,22 @@ async function main() {
   await registerSongsRoutes(fastify, db);
   await registerQueueRoutes(fastify, orchestrator);
   await registerControlRoutes(fastify, orchestrator, mpv);
+  // Static serve cached portraits (data/portraits/<sha>.{jpg,png,...}).
+  // Wikidata/Wikipedia images are CC-BY/CC-BY-SA — attribution lives on the
+  // /api/artists rows, not in the file response, but the file itself is fine
+  // to serve directly.
+  const portraitsDir = resolve(root, "data", "portraits");
+  mkdirSync(portraitsDir, { recursive: true });
+  await fastify.register(fastifyStatic, {
+    root: portraitsDir,
+    prefix: "/portraits/",
+    decorateReply: false,
+    wildcard: false,
+  });
+
+  // Admin events: portrait fetcher progress is broadcast via WS.
+  const adminEvents = new (await import("node:events")).EventEmitter();
+
   await registerAdminRoutes(
     fastify,
     scanner,
@@ -197,8 +213,10 @@ async function main() {
     () => openlistProc?.getInitialPassword() ?? null,
     db,
     config.library_path,
+    root,
+    adminEvents as Parameters<typeof registerAdminRoutes>[8],
   );
-  await registerWs(fastify, orchestrator);
+  await registerWs(fastify, orchestrator, adminEvents);
 
   fastify.get("/api/health", async () => {
     const songCount = (

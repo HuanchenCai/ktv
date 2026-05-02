@@ -3,8 +3,14 @@ import type { Scanner } from "../scanner.ts";
 import type { OpenListClient } from "../openlist-client.ts";
 import type { Db } from "../db.ts";
 import { importLocalLibrary } from "../local-importer.ts";
+import { fetchPortraits, type PortraitProgress } from "../portrait-fetcher.ts";
 import QRCode from "qrcode";
 import { networkInterfaces } from "node:os";
+import { EventEmitter } from "node:events";
+
+export type AdminEvents = EventEmitter & {
+  emit(event: "portrait.progress", data: PortraitProgress): boolean;
+};
 
 export async function registerAdminRoutes(
   fastify: FastifyInstance,
@@ -14,7 +20,11 @@ export async function registerAdminRoutes(
   getOpenlistInitialPassword: () => string | null = () => null,
   db?: Db,
   libraryPath?: string,
+  projectRoot?: string,
+  events?: AdminEvents,
 ): Promise<void> {
+  let portraitJob: Promise<PortraitProgress> | null = null;
+  let lastPortraitProgress: PortraitProgress | null = null;
   fastify.post<{ Body: { max_depth?: number } }>(
     "/api/admin/scan",
     async (req, rep) => {
@@ -50,6 +60,55 @@ export async function registerAdminRoutes(
       width: 256,
     });
     return { url, qr_data_url: dataUrl, lan_ips: lanIps };
+  });
+
+  /**
+   * Kick off the portrait fetcher in the background. Returns immediately
+   * (200 with current progress); progress updates fan out via WebSocket as
+   * the `portrait.progress` event.
+   */
+  fastify.post<{
+    Body: { min_song_count?: number; force?: boolean };
+  }>("/api/admin/fetch-portraits", async (req, rep) => {
+    if (!db || !projectRoot) {
+      return rep.code(500).send({ error: "fetch-portraits not wired up" });
+    }
+    if (portraitJob) {
+      return { running: true, progress: lastPortraitProgress };
+    }
+    const minSongCount = req.body?.min_song_count ?? 1;
+    const force = !!req.body?.force;
+    portraitJob = fetchPortraits(db, {
+      minSongCount,
+      force,
+      projectRoot,
+      onProgress: (p) => {
+        lastPortraitProgress = { ...p };
+        events?.emit("portrait.progress", lastPortraitProgress);
+      },
+    })
+      .catch((err) => {
+        console.error("[portraits] job failed:", err);
+        const errored: PortraitProgress = {
+          total: 0,
+          done: 0,
+          ok: 0,
+          missed: 0,
+          current: null,
+        };
+        return errored;
+      })
+      .finally(() => {
+        portraitJob = null;
+      });
+    return { running: true, progress: lastPortraitProgress };
+  });
+
+  fastify.get("/api/admin/portrait-progress", async () => {
+    return {
+      running: portraitJob !== null,
+      progress: lastPortraitProgress,
+    };
   });
 
   /**

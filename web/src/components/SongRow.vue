@@ -7,6 +7,8 @@ defineProps<{
   queued?: boolean;
   /** Visual variant: "row" (compact, phone) or "card" (grid cell, TV). */
   variant?: "row" | "card";
+  /** Optional portrait URL for the artist; falls back to color tile. */
+  artistPortrait?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -40,10 +42,17 @@ function initialFor(s: string): string {
     class="card-hoverable flex items-center gap-3"
   >
     <div
-      class="w-12 h-12 rounded-lg shrink-0 grid place-items-center text-xl font-semibold"
-      :style="{ background: colorFor(song.artist) }"
+      class="w-12 h-12 rounded-lg shrink-0 overflow-hidden grid place-items-center text-xl font-semibold"
+      :style="!artistPortrait ? { background: colorFor(song.artist) } : undefined"
     >
-      {{ initialFor(song.title) }}
+      <img
+        v-if="artistPortrait"
+        :src="artistPortrait"
+        :alt="song.artist"
+        class="w-full h-full object-cover"
+        loading="lazy"
+      />
+      <span v-else>{{ initialFor(song.title) }}</span>
     </div>
     <div class="flex-1 min-w-0">
       <div class="truncate font-medium">{{ song.title }}</div>
@@ -75,10 +84,23 @@ function initialFor(s: string): string {
 
   <li v-else class="card-hoverable flex flex-col gap-3 p-4">
     <div
-      class="aspect-square rounded-lg grid place-items-center text-5xl font-bold shadow-inner"
-      :style="{ background: colorFor(song.artist) }"
+      class="aspect-square rounded-lg overflow-hidden grid place-items-center text-5xl font-bold shadow-inner relative"
+      :style="!artistPortrait ? { background: colorFor(song.artist) } : undefined"
     >
-      <span class="opacity-90">{{ initialFor(song.title) }}</span>
+      <img
+        v-if="artistPortrait"
+        :src="artistPortrait"
+        :alt="song.artist"
+        class="absolute inset-0 w-full h-full object-cover"
+        loading="lazy"
+      />
+      <div
+        v-if="artistPortrait"
+        class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent"
+      ></div>
+      <span v-if="!artistPortrait" class="opacity-90">
+        {{ initialFor(song.title) }}
+      </span>
     </div>
     <div class="min-w-0">
       <div class="truncate text-base font-semibold leading-tight">
