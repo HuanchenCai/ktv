@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import QueueList from "../components/QueueList.vue";
 import NowPlayingCard from "../components/NowPlayingCard.vue";
 import Controls from "../components/Controls.vue";
@@ -7,6 +8,8 @@ import QrPanel from "../components/QrPanel.vue";
 import PopularArtistsRail from "../components/PopularArtistsRail.vue";
 import SongRail from "../components/SongRail.vue";
 
+const route = useRoute();
+const router = useRouter();
 const portraits = ref<Map<string, string>>(new Map());
 
 async function loadPortraits() {
@@ -26,9 +29,18 @@ async function loadPortraits() {
 
 onMounted(loadPortraits);
 
-// Each rail's query — last_played requires it to be non-null, so use
-// cached_only to filter to songs that exist on disk.
-const rails = [
+const focusedArtist = computed(
+  () => (route.query.artist as string | undefined) ?? null,
+);
+
+function clearArtistFilter() {
+  const query = { ...route.query };
+  delete query.artist;
+  router.replace({ path: route.path, query });
+}
+
+// Default rails when no artist is focused.
+const defaultRails = [
   {
     title: "最近唱过",
     qs: "sort=last_played_at&order=desc&limit=20&cached_only=1",
@@ -48,14 +60,45 @@ const rails = [
     <section class="flex-1 flex flex-col min-w-0 overflow-hidden">
       <NowPlayingCard size="hero" />
       <div class="mt-6 flex-1 overflow-y-auto pr-3 -mr-3 min-h-0 space-y-7">
+        <!-- Already-queued strip: always visible at the top -->
+        <section>
+          <h3 class="h-section mb-3">已点歌单</h3>
+          <QueueList variant="compact" :limit="6" />
+        </section>
+
         <PopularArtistsRail size="hero" />
-        <SongRail
-          v-for="r in rails"
-          :key="r.title"
-          :title="r.title"
-          :query-string="r.qs"
-          :portraits="portraits"
-        />
+
+        <!-- When user clicks an artist chip, show their songs as a rail -->
+        <template v-if="focusedArtist">
+          <div class="flex items-baseline justify-between -mb-3">
+            <span></span>
+            <button
+              class="text-xs text-muted hover:text-white transition-colors"
+              @click="clearArtistFilter"
+            >
+              × 清除筛选 「{{ focusedArtist }}」
+            </button>
+          </div>
+          <SongRail
+            :key="focusedArtist"
+            :title="focusedArtist + ' 的歌'"
+            :query-string="
+              'artist=' + encodeURIComponent(focusedArtist) + '&limit=60'
+            "
+            :portraits="portraits"
+          />
+        </template>
+
+        <!-- Default discovery rails when no artist focused -->
+        <template v-else>
+          <SongRail
+            v-for="r in defaultRails"
+            :key="r.title"
+            :title="r.title"
+            :query-string="r.qs"
+            :portraits="portraits"
+          />
+        </template>
       </div>
     </section>
 

@@ -9,7 +9,9 @@ onMounted(() => startWs());
 const route = useRoute();
 const tab = computed(() => route.path.split("/")[1] ?? "search");
 const isTv = computed(() => route.meta?.layout === "tv");
-const isAdmin = computed(() => route.path.startsWith("/admin"));
+const isPhoneTabRoute = computed(() =>
+  ["/search", "/queue", "/now"].some((p) => route.path.startsWith(p)),
+);
 
 const wsDotClass = computed(() => ({
   "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]":
@@ -21,64 +23,90 @@ const wsDotClass = computed(() => ({
 
 <template>
   <div class="flex flex-col h-full">
-    <!-- TV header: slim, branding-forward -->
+    <!-- Unified header: same nav links everywhere so /admin / /library /
+         /artists can always jump back to /tv. Just the size differs. -->
     <header
-      v-if="isTv"
-      class="flex items-center justify-between px-8 py-4 border-b border-border/60 backdrop-blur-md bg-bg/40"
+      :class="[
+        'flex items-center justify-between border-b border-border/60 backdrop-blur-md',
+        isTv ? 'px-8 py-4 bg-bg/40' : 'px-4 py-3 sticky top-0 bg-bg/80 z-30',
+      ]"
     >
       <div class="flex items-center gap-3">
         <div
-          class="w-9 h-9 rounded-xl bg-accent shadow-glow grid place-items-center text-lg"
+          :class="[
+            'rounded-xl bg-accent shadow-glow grid place-items-center',
+            isTv ? 'w-9 h-9 text-lg' : 'w-8 h-8 text-sm rounded-lg',
+          ]"
         >
           🎤
         </div>
         <div>
-          <div class="text-xl font-bold tracking-wide leading-none">KTV</div>
-          <div class="text-[11px] text-muted mt-0.5 flex items-center gap-1.5">
-            <span class="inline-block w-1.5 h-1.5 rounded-full" :class="wsDotClass"></span>
-            <span>{{ wsStatus === "open" ? "在线" : wsStatus === "connecting" ? "连接中" : "已断开" }}</span>
+          <div
+            :class="[
+              'font-bold tracking-wide leading-none',
+              isTv ? 'text-xl' : '',
+            ]"
+          >
+            KTV
+          </div>
+          <div
+            class="text-muted mt-0.5 flex items-center gap-1.5"
+            :class="isTv ? 'text-[11px]' : 'text-[10px]'"
+          >
+            <span
+              class="inline-block w-1.5 h-1.5 rounded-full"
+              :class="wsDotClass"
+            ></span>
+            <span>
+              {{
+                wsStatus === "open"
+                  ? "在线"
+                  : wsStatus === "connecting"
+                    ? "连接中"
+                    : "已断开"
+              }}
+            </span>
           </div>
         </div>
       </div>
-      <div class="flex items-center gap-3 text-xs text-muted">
-        <RouterLink to="/library" class="hover:text-white transition-colors">曲库</RouterLink>
-        <span class="text-border">|</span>
-        <RouterLink to="/admin" class="hover:text-white transition-colors">管理</RouterLink>
-        <span class="text-border">|</span>
-        <RouterLink to="/search" class="hover:text-white transition-colors">手机版预览</RouterLink>
-      </div>
-    </header>
-
-    <!-- Phone header: minimal -->
-    <header
-      v-else
-      class="flex items-center justify-between px-4 py-3 border-b border-border/60 sticky top-0 bg-bg/80 backdrop-blur-md z-30"
-    >
-      <div class="flex items-center gap-2.5">
-        <div
-          class="w-8 h-8 rounded-lg bg-accent grid place-items-center text-sm shadow-glow"
-        >
-          🎤
-        </div>
-        <div>
-          <div class="font-bold tracking-wide leading-none">KTV</div>
-          <div class="text-[10px] text-muted mt-0.5 flex items-center gap-1">
-            <span class="inline-block w-1 h-1 rounded-full" :class="wsDotClass"></span>
-            <span>{{ wsStatus === "open" ? "在线" : "连接中" }}</span>
-          </div>
-        </div>
-      </div>
-      <RouterLink
-        to="/admin"
-        class="text-xs text-muted hover:text-white transition-colors"
+      <nav
+        class="flex items-center gap-2.5 text-xs text-muted"
+        :class="isTv ? '' : 'gap-1.5'"
       >
-        管理
-      </RouterLink>
+        <RouterLink
+          to="/tv"
+          class="hover:text-white transition-colors px-1.5 py-1 rounded"
+          active-class="text-white bg-panel"
+        >
+          📺 TV
+        </RouterLink>
+        <RouterLink
+          to="/library"
+          class="hover:text-white transition-colors px-1.5 py-1 rounded"
+          active-class="text-white bg-panel"
+        >
+          📚 曲库
+        </RouterLink>
+        <RouterLink
+          to="/artists"
+          class="hover:text-white transition-colors px-1.5 py-1 rounded"
+          active-class="text-white bg-panel"
+        >
+          👤 歌手
+        </RouterLink>
+        <RouterLink
+          to="/admin"
+          class="hover:text-white transition-colors px-1.5 py-1 rounded"
+          active-class="text-white bg-panel"
+        >
+          ⚙ 管理
+        </RouterLink>
+      </nav>
     </header>
 
     <main
       class="flex-1 overflow-y-auto"
-      :class="isTv ? '' : isAdmin ? 'pb-16' : 'pb-32'"
+      :class="isTv ? '' : isPhoneTabRoute ? 'pb-32' : 'pb-4'"
     >
       <RouterView v-slot="{ Component }">
         <transition name="fade" mode="out-in">
@@ -87,12 +115,12 @@ const wsDotClass = computed(() => ({
       </RouterView>
     </main>
 
-    <!-- Phone-only: mini player above tab bar when something is queued -->
-    <MiniPlayer v-if="!isTv && !isAdmin" />
+    <!-- Phone-only: mini player above tab bar when on a phone-tab route -->
+    <MiniPlayer v-if="isPhoneTabRoute" />
 
-    <!-- Phone tab bar -->
+    <!-- Phone tab bar: only on the three phone-driven routes -->
     <nav
-      v-if="!isTv"
+      v-if="isPhoneTabRoute"
       class="fixed bottom-0 left-0 right-0 flex bg-elevated/95 backdrop-blur-md border-t border-border/60 pb-[env(safe-area-inset-bottom)]"
     >
       <RouterLink to="/search" class="tab" :class="{ active: tab === 'search' }">
