@@ -7,6 +7,7 @@ import Controls from "../components/Controls.vue";
 import QrPanel from "../components/QrPanel.vue";
 import PopularArtistsRail from "../components/PopularArtistsRail.vue";
 import SongRail from "../components/SongRail.vue";
+import ArtistSongs from "../components/ArtistSongs.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -68,25 +69,19 @@ const defaultRails = [
 
         <PopularArtistsRail size="hero" />
 
-        <!-- When user clicks an artist chip, show their songs as a rail -->
+        <!-- When user clicks an artist chip, show their songs as a compact
+             two-column text list — many songs visible at once, no per-row
+             portrait noise (it'd be the same face repeated). -->
         <template v-if="focusedArtist">
-          <div class="flex items-baseline justify-between -mb-3">
-            <span></span>
+          <div class="flex items-baseline justify-end -mt-1 -mb-2">
             <button
               class="text-xs text-muted hover:text-white transition-colors"
               @click="clearArtistFilter"
             >
-              × 清除筛选 「{{ focusedArtist }}」
+              × 清除筛选
             </button>
           </div>
-          <SongRail
-            :key="focusedArtist"
-            :title="focusedArtist + ' 的歌'"
-            :query-string="
-              'artist=' + encodeURIComponent(focusedArtist) + '&limit=60'
-            "
-            :portraits="portraits"
-          />
+          <ArtistSongs :key="focusedArtist" :artist="focusedArtist" />
         </template>
 
         <!-- Default discovery rails when no artist focused -->
