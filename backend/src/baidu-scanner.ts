@@ -89,12 +89,13 @@ async function listBaidu(
 }
 
 export type BaiduScanProgress = {
-  phase: "listing" | "indexing" | "done";
+  phase: "listing" | "indexing" | "done" | "failed";
   current_dir: string | null;
   dirs: number;
   inserted: number;
   updated: number;
   skipped: number;
+  error?: string | null;
 };
 
 export type BaiduScanOptions = {
@@ -164,9 +165,14 @@ export async function scanBaidu(
     try {
       items = await listBaidu(path, cookie, opts.abortSignal);
     } catch (e) {
-      console.warn(
-        `[baidu-scan] list failed ${path}: ${(e as Error).message}`,
-      );
+      const msg = (e as Error).message;
+      console.warn(`[baidu-scan] list failed ${path}: ${msg}`);
+      // The root listing failing is the whole job failing — bubble up so
+      // the API layer can report it. For deeper subdirs we tolerate
+      // permissioned/empty failures and skip.
+      if (depth === 0) {
+        throw new Error(`list ${path} failed: ${msg}`);
+      }
       return;
     }
     for (const item of items) {
@@ -201,7 +207,15 @@ export async function scanBaidu(
     }
   }
 
-  await walk(root, 0, "");
+  try {
+    await walk(root, 0, "");
+  } catch (err) {
+    stats.phase = "failed";
+    stats.current_dir = null;
+    const msg = err instanceof Error ? err.message : String(err);
+    opts.onProgress?.({ ...stats, error: msg });
+    throw err;
+  }
   tick("done", null);
   return {
     inserted: stats.inserted,

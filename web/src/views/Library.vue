@@ -38,12 +38,13 @@ type ImportProgress = {
   skipped: number;
 };
 type BaiduScanProgress = {
-  phase: "listing" | "indexing" | "done";
+  phase: "listing" | "indexing" | "done" | "failed";
   current_dir: string | null;
   dirs: number;
   inserted: number;
   updated: number;
   skipped: number;
+  error?: string | null;
 };
 
 const stats = ref<Stats | null>(null);
@@ -122,7 +123,9 @@ onMounted(() => {
       if (importProgress.value.phase === "done") refreshAll();
     } else if (m.type === "baidu-scan.progress") {
       baiduProgress.value = m.payload as BaiduScanProgress;
-      baiduScanning.value = baiduProgress.value.phase !== "done";
+      baiduScanning.value =
+        baiduProgress.value.phase !== "done" &&
+        baiduProgress.value.phase !== "failed";
       if (baiduProgress.value.phase === "done") refreshAll();
     }
   });
@@ -402,7 +405,8 @@ async function downloadSelected() {
       </div>
       <div
         v-if="baiduProgress"
-        class="text-xs text-muted space-y-1.5"
+        class="text-xs space-y-1.5"
+        :class="baiduProgress.phase === 'failed' ? 'text-rose-400' : 'text-muted'"
       >
         <div>
           阶段:
@@ -411,7 +415,9 @@ async function downloadSelected() {
               ? "列目录"
               : baiduProgress.phase === "indexing"
                 ? "入库"
-                : "完成"
+                : baiduProgress.phase === "failed"
+                  ? "失败"
+                  : "完成"
           }}
           · 目录 {{ baiduProgress.dirs }} · 新增 {{ baiduProgress.inserted }}
           · 更新 {{ baiduProgress.updated }} · 跳过
@@ -419,6 +425,9 @@ async function downloadSelected() {
         </div>
         <div v-if="baiduProgress.current_dir" class="truncate">
           {{ baiduProgress.current_dir }}
+        </div>
+        <div v-if="baiduProgress.error" class="text-rose-400 break-all">
+          错误: {{ baiduProgress.error }}
         </div>
       </div>
     </div>

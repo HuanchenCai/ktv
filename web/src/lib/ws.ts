@@ -15,12 +15,13 @@ export type ManagerTask = {
 };
 
 export type BaiduScanProgress = {
-  phase: "listing" | "indexing" | "done";
+  phase: "listing" | "indexing" | "done" | "failed";
   current_dir: string | null;
   dirs: number;
   inserted: number;
   updated: number;
   skipped: number;
+  error?: string | null;
 };
 
 export type WsMessage =

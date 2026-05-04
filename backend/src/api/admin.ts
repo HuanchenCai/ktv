@@ -43,6 +43,7 @@ export async function registerAdminRoutes(
   let baiduJob: Promise<unknown> | null = null;
   let baiduAbort: AbortController | null = null;
   let lastBaiduProgress: BaiduScanProgress | null = null;
+  let lastBaiduError: string | null = null;
   fastify.post<{ Body: { max_depth?: number } }>(
     "/api/admin/scan",
     async (req, rep) => {
@@ -152,10 +153,15 @@ export async function registerAdminRoutes(
       });
     }
     baiduAbort = new AbortController();
+    lastBaiduError = null;
+    const requestedRoot = req.body?.root ?? "/KTV";
+    console.log(
+      `[baidu-scan] starting root=${requestedRoot} bduss.len=${bduss.length} stoken=${baiduCreds?.stoken ? "set" : "empty"}`,
+    );
     baiduJob = scanBaidu(db, {
       bduss,
       stoken: baiduCreds?.stoken,
-      root: req.body?.root ?? "/KTV",
+      root: requestedRoot,
       maxDepth: req.body?.max_depth ?? 20,
       abortSignal: baiduAbort.signal,
       onProgress: (p) => {
@@ -164,7 +170,9 @@ export async function registerAdminRoutes(
       },
     })
       .catch((err) => {
-        console.error("[baidu-scan] failed:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        lastBaiduError = msg;
+        console.error("[baidu-scan] failed:", msg);
       })
       .finally(() => {
         baiduJob = null;
@@ -177,6 +185,7 @@ export async function registerAdminRoutes(
     return {
       running: baiduJob !== null,
       progress: lastBaiduProgress,
+      error: lastBaiduError,
     };
   });
 
