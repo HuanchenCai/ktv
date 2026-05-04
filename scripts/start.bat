@@ -1,5 +1,5 @@
 @echo off
-rem Launch KTV backend and open browser. Pure ASCII only — Chinese Windows cmd
+rem Launch KTV backend and open browser. Pure ASCII only - Chinese Windows cmd
 rem reads .bat in OEM codepage; non-ASCII bytes get mangled. See CLAUDE.md.
 
 setlocal
