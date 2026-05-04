@@ -28,6 +28,10 @@ const ConfigSchema = z.object({
     prefetch_ahead: z.number().int().min(0).max(10).default(2),
     poll_interval_ms: z.number().int().min(100).max(10000).default(500),
   }),
+  // Whether to walk library_path on every boot. Off by default — for big
+  // NAS-mounted libraries, stat'ing 25k+ files over SMB on each restart is
+  // measurable. Manual scan (the "扫本地目录" button) still works.
+  auto_scan_on_startup: z.boolean().default(false),
   vocal_channel_default: z.enum(["L", "R"]).default("L"),
   baidu: z
     .object({

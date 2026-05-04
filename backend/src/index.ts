@@ -319,38 +319,40 @@ async function main() {
     process.exit(1);
   }
 
-  // Auto-import any new MKV files in library_path on every boot. The DB is
-  // sticky across restarts (UPSERT on cloud_path), so re-runs are cheap; new
-  // downloads since last boot show up automatically without the user
-  // clicking 扫描. Runs in the background — we don't block startup on it.
-  setTimeout(() => {
-    void (async () => {
-      try {
-        const { importLocalLibrary } = await import("./local-importer.ts");
-        const before = (
-          db.prepare("SELECT COUNT(*) AS c FROM songs").get() as {
-            c: number;
-          }
-        ).c;
-        const r = await importLocalLibrary(db, config.library_path, (p) =>
-          adminEvents.emit("import.progress", p),
-        );
-        const after = (
-          db.prepare("SELECT COUNT(*) AS c FROM songs").get() as {
-            c: number;
-          }
-        ).c;
-        const added = after - before;
-        if (added > 0 || r.scanned > 0) {
-          console.log(
-            `[startup-import] scanned ${r.scanned} files, +${added} new (now ${after} in db)`,
+  // Optional: walk library_path on every boot. Off by default — for big
+  // NAS-mounted libraries, stat'ing 25k+ files on each restart is slow.
+  // The DB sticks across restarts; new files show up after the user
+  // clicks the "扫本地目录" button on /library.
+  if (config.auto_scan_on_startup) {
+    setTimeout(() => {
+      void (async () => {
+        try {
+          const { importLocalLibrary } = await import("./local-importer.ts");
+          const before = (
+            db.prepare("SELECT COUNT(*) AS c FROM songs").get() as {
+              c: number;
+            }
+          ).c;
+          const r = await importLocalLibrary(db, config.library_path, (p) =>
+            adminEvents.emit("import.progress", p),
           );
+          const after = (
+            db.prepare("SELECT COUNT(*) AS c FROM songs").get() as {
+              c: number;
+            }
+          ).c;
+          const added = after - before;
+          if (added > 0 || r.scanned > 0) {
+            console.log(
+              `[startup-import] scanned ${r.scanned} files, +${added} new (now ${after} in db)`,
+            );
+          }
+        } catch (err) {
+          console.warn("[startup-import] failed:", err);
         }
-      } catch (err) {
-        console.warn("[startup-import] failed:", err);
-      }
-    })();
-  }, 5000);
+      })();
+    }, 5000);
+  }
 
   // Graceful shutdown
   const shutdown = async () => {
