@@ -3,6 +3,7 @@ import { existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { platform, tmpdir } from "node:os";
 import { resolve, dirname, join } from "node:path";
+import { prepareQrBgra, type BgraOverlay } from "./qr-overlay.ts";
 
 /**
  * node-mpv 1.x — constructor spawns mpv immediately (no .start() method).
@@ -56,14 +57,10 @@ function findMpvBinary(): string | null {
   return null;
 }
 
-/**
- * Format an absolute filesystem path for FFmpeg's `movie=` filter argument.
- * FFmpeg uses `:` as the option separator inside a filter, so the Windows
- * drive colon has to be escaped.
- */
-function escapeForFfmpegMovie(p: string): string {
-  return p.replace(/\\/g, "/").replace(/:/g, "\\:");
-}
+// (Filter-based overlay was reverted — the lavfi-complex form forced [aid1] to
+// [ao] at startup, which broke runtime aid switching for multi-track files.
+// We now overlay via the `overlay-add` OSD command instead, which leaves the
+// audio chain alone.)
 
 export type MpvState = {
   current_file: string | null;
@@ -91,6 +88,7 @@ export class MpvController extends EventEmitter {
   private fullscreen: boolean;
   private qrOverlayPath: string | null;
   private inputConfPath: string | null = null;
+  private overlayBgra: BgraOverlay | null = null;
 
   /** "stereo" = single-stream pan mode; "tracks" = multi-track aid mode */
   private audioMode: "stereo" | "tracks" = "stereo";
@@ -149,19 +147,42 @@ export class MpvController extends EventEmitter {
     const mpvArgs: string[] = [
       "--keep-open=yes",
       "--idle=yes",
+      // No --force-window: mpv stays headless when nothing is queued. The
+      // browser /tv view (AirPlayed/projected to the TV) is the idle screen.
+      // mpv only pops a window when a song actually loads.
+      "--ontop=yes",
+      "--title=KTV",
+      "--cursor-autohide=1000",
+      "--osc=no", // we draw our own controls in the web UI
       `--input-conf=${this.inputConfPath}`,
     ];
-    if (this.fullscreen) mpvArgs.push("--fullscreen");
-    // QR overlay attempted via --lavfi-complex; the previous --vf-add=lavfi=
-    // syntax caused mpv to drop the video output silently on Windows paths.
-    // We now try the canonical lavfi-complex form. If anything in the chain
-    // fails, mpv will log it but still play the video.
-    if (this.qrOverlayPath && existsSync(this.qrOverlayPath)) {
-      const escaped = escapeForFfmpegMovie(resolve(this.qrOverlayPath));
+    if (this.fullscreen) {
+      // Use BORDERLESS WINDOWED that fills the screen, not exclusive
+      // fullscreen. Going exclusive fullscreen on Windows can change the
+      // display refresh rate / mode, which kicks Miracast / Smart View /
+      // AirPlay mirrors off the TV. Borderless windowed looks identical to
+      // the user but is just a regular maximized window underneath.
       mpvArgs.push(
-        `--lavfi-complex=[vid1]format=yuva420p[v];movie=${escaped}:loop=0,scale=220:220,format=rgba[wm];[v][wm]overlay=W-w-40:40[vo]`,
+        "--no-border",
+        "--geometry=100%x100%+0+0",
+        "--keep-open=yes",
       );
-      console.log(`[mpv] QR overlay enabled (${this.qrOverlayPath})`);
+    }
+
+    // Decode the QR PNG into raw BGRA bytes upfront. mpv's `overlay-add` IPC
+    // command consumes a raw BGRA file and draws on the OSD layer — that's
+    // independent of the filter chain, so audio routing (incl. multi-track
+    // aid switching) is unaffected.
+    if (this.qrOverlayPath && existsSync(this.qrOverlayPath)) {
+      try {
+        this.overlayBgra = prepareQrBgra(this.qrOverlayPath);
+        console.log(
+          `[mpv] QR overlay prepared (${this.overlayBgra.width}x${this.overlayBgra.height} -> ${this.overlayBgra.path})`,
+        );
+      } catch (err) {
+        console.warn("[mpv] QR overlay prep failed; disabling:", err);
+        this.overlayBgra = null;
+      }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -174,12 +195,43 @@ export class MpvController extends EventEmitter {
     this.mpv.on("stopped", () => this.emit("track-ended"));
     this.mpv.on("started", () => {
       void this.detectAudioMode().catch(() => {});
+      void this.applyQrOverlay().catch(() => {});
       this.emit("track-started", { channel: this.currentChannel });
     });
     this.mpv.on("resumed", () => this.emit("resumed"));
     this.mpv.on("paused", () => this.emit("paused"));
     this.ready = true;
     console.log("[mpv] ready");
+  }
+
+  /**
+   * Push the prepared QR bitmap onto mpv's OSD via the `overlay-add` command.
+   * Must be called after a file is loaded — mpv computes osd-width from the
+   * actual video stream / output size, which we use to pin the QR to the
+   * top-right corner with a 40 px margin.
+   */
+  private async applyQrOverlay(): Promise<void> {
+    if (!this.mpv || !this.overlayBgra) return;
+    try {
+      const osdW = Number(await this.mpv.getProperty("osd-width")) || 1920;
+      const x = Math.max(0, osdW - this.overlayBgra.width - 40);
+      const y = 40;
+      await Promise.resolve(
+        this.mpv.command("overlay-add", [
+          0,
+          x,
+          y,
+          this.overlayBgra.path,
+          0,
+          "bgra",
+          this.overlayBgra.width,
+          this.overlayBgra.height,
+          this.overlayBgra.stride,
+        ]),
+      );
+    } catch (err) {
+      console.warn("[mpv] overlay-add failed:", err);
+    }
   }
 
   /**
@@ -264,20 +316,16 @@ export class MpvController extends EventEmitter {
   }
 
   /**
-   * Two-state toggle between the song's "原唱" (vocal) and "伴唱"
-   * (accompaniment). No mute / no "both" middle state — that confused users.
+   * Flip between L and R channel (or between the two audio tracks for
+   * multi-stream files). Doesn't try to label them as 原唱 vs 伴唱 — the
+   * convention varies per publisher and per file, and the DB's
+   * `vocal_channel` field is unreliable. Users learn which side has the
+   * vocal by ear and just keep tapping the toggle until they like it.
    */
-  async toggleVocal(
-    vocalChannel: "L" | "R",
-  ): Promise<"original" | "accompaniment"> {
-    const accompaniment: "L" | "R" = vocalChannel === "L" ? "R" : "L";
-    if (this.currentChannel === vocalChannel) {
-      await this.setChannel(accompaniment);
-      return "accompaniment";
-    } else {
-      await this.setChannel(vocalChannel);
-      return "original";
-    }
+  async toggleVocal(): Promise<"L" | "R"> {
+    const next: "L" | "R" = this.currentChannel === "L" ? "R" : "L";
+    await this.setChannel(next);
+    return next;
   }
 
   async pause(): Promise<void> {
@@ -333,6 +381,11 @@ export class MpvController extends EventEmitter {
 
   async shutdown(): Promise<void> {
     if (this.mpv) {
+      try {
+        await Promise.resolve(this.mpv.command("overlay-remove", [0]));
+      } catch {
+        /* ignore */
+      }
       try {
         this.mpv.quit();
       } catch {

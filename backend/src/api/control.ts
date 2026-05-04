@@ -17,6 +17,11 @@ export async function registerControlRoutes(
     return { ok: true };
   });
 
+  fastify.post("/api/control/reopen", async () => {
+    const ok = await orchestrator.reopenCurrent();
+    return { ok };
+  });
+
   fastify.post("/api/control/toggle-vocal", async () => {
     await orchestrator.toggleVocal();
     return { ok: true, channel: orchestrator.getChannelState() };

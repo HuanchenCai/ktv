@@ -4,8 +4,19 @@ import type { OpenListClient } from "../openlist-client.ts";
 import type { Db } from "../db.ts";
 import type { DownloadManager } from "../download-manager.ts";
 import { importLocalLibrary } from "../local-importer.ts";
+import { fetchPortraits, type PortraitProgress } from "../portrait-fetcher.ts";
+import type { ScanProgress } from "../scanner.ts";
+import type { ImportProgress } from "../local-importer.ts";
+import { pickFolder } from "../folder-picker.ts";
 import QRCode from "qrcode";
 import { networkInterfaces } from "node:os";
+import { EventEmitter } from "node:events";
+
+export type AdminEvents = EventEmitter & {
+  emit(event: "portrait.progress", data: PortraitProgress): boolean;
+  emit(event: "scan.progress", data: ScanProgress): boolean;
+  emit(event: "import.progress", data: ImportProgress): boolean;
+};
 
 export async function registerAdminRoutes(
   fastify: FastifyInstance,
@@ -15,14 +26,19 @@ export async function registerAdminRoutes(
   getOpenlistInitialPassword: () => string | null = () => null,
   db?: Db,
   libraryPath?: string,
+  projectRoot?: string,
+  events?: AdminEvents,
   downloads?: DownloadManager,
 ): Promise<void> {
+  let portraitJob: Promise<PortraitProgress> | null = null;
+  let lastPortraitProgress: PortraitProgress | null = null;
   fastify.post<{ Body: { max_depth?: number } }>(
     "/api/admin/scan",
     async (req, rep) => {
       try {
         const result = await scanner.scan({
           maxDepth: req.body?.max_depth ?? 3,
+          onProgress: (p) => events?.emit("scan.progress", p),
         });
         return result;
       } catch (err) {
@@ -52,6 +68,72 @@ export async function registerAdminRoutes(
       width: 256,
     });
     return { url, qr_data_url: dataUrl, lan_ips: lanIps };
+  });
+
+  /**
+   * Kick off the portrait fetcher in the background. Returns immediately
+   * (200 with current progress); progress updates fan out via WebSocket as
+   * the `portrait.progress` event.
+   */
+  fastify.post<{
+    Body: { min_song_count?: number; force?: boolean };
+  }>("/api/admin/fetch-portraits", async (req, rep) => {
+    if (!db || !projectRoot) {
+      return rep.code(500).send({ error: "fetch-portraits not wired up" });
+    }
+    if (portraitJob) {
+      return { running: true, progress: lastPortraitProgress };
+    }
+    const minSongCount = req.body?.min_song_count ?? 1;
+    const force = !!req.body?.force;
+    portraitJob = fetchPortraits(db, {
+      minSongCount,
+      force,
+      projectRoot,
+      onProgress: (p) => {
+        lastPortraitProgress = { ...p };
+        events?.emit("portrait.progress", lastPortraitProgress);
+      },
+    })
+      .catch((err) => {
+        console.error("[portraits] job failed:", err);
+        const errored: PortraitProgress = {
+          total: 0,
+          done: 0,
+          ok: 0,
+          missed: 0,
+          current: null,
+        };
+        return errored;
+      })
+      .finally(() => {
+        portraitJob = null;
+      });
+    return { running: true, progress: lastPortraitProgress };
+  });
+
+  fastify.get("/api/admin/portrait-progress", async () => {
+    return {
+      running: portraitJob !== null,
+      progress: lastPortraitProgress,
+    };
+  });
+
+  /**
+   * Pop up a native folder picker on the host machine and return whatever
+   * the user selected. Used by the admin page so the user can graphically
+   * choose a folder instead of typing its absolute path. Network shares
+   * (UNC) are reachable from the picker too.
+   */
+  fastify.post("/api/admin/pick-folder", async (_req, rep) => {
+    try {
+      const path = await pickFolder(libraryPath);
+      return { path };
+    } catch (err) {
+      return rep
+        .code(500)
+        .send({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   /**
@@ -111,7 +193,9 @@ export async function registerAdminRoutes(
       }
       const target = req.body?.path?.trim() || libraryPath;
       try {
-        const result = await importLocalLibrary(db, target);
+        const result = await importLocalLibrary(db, target, (p) =>
+          events?.emit("import.progress", p),
+        );
         return { ...result, scanned_path: target };
       } catch (err) {
         return rep

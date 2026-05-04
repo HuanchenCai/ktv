@@ -39,6 +39,16 @@ export class Orchestrator extends EventEmitter {
   private running = false;
   private currentSongId: number | null = null;
   private currentChannelState: "L" | "R" | "both" = "both";
+  /**
+   * Race guard for skipCurrent. mpv.stop() emits a "stopped" event
+   * asynchronously; by the time it arrives we may have already loaded the
+   * next song via maybeAutoPlay(). Without this flag, the stale stop event
+   * triggers onTrackEnded which removes the freshly-loaded song from the
+   * queue and advances again — i.e. one song silently gets skipped.
+   * Set during the manual transition; auto-cleared after 600ms.
+   */
+  private skipping = false;
+  private skippingTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private db: Db,
@@ -54,6 +64,10 @@ export class Orchestrator extends EventEmitter {
     super();
 
     this.mpv.on("track-ended", () => {
+      // Manual skip drives the advance itself; the stale "stopped" event
+      // that arrives after mpv processes our explicit stop must NOT trigger
+      // a second advance.
+      if (this.skipping) return;
       void this.onTrackEnded();
     });
     this.mpv.on("channel-changed", (info: { channel: "L" | "R" | "both" }) => {
@@ -385,18 +399,33 @@ export class Orchestrator extends EventEmitter {
     this.broadcastPlayerState();
   }
 
+  /**
+   * Arm the suppression flag so any "stopped" event triggered by an
+   * imminent stop()/load() arrives while we're still ignoring them.
+   * 600 ms is conservative; mpv usually delivers within ~50 ms.
+   */
+  private armSkipGuard(): void {
+    if (this.skippingTimer) clearTimeout(this.skippingTimer);
+    this.skipping = true;
+    this.skippingTimer = setTimeout(() => {
+      this.skipping = false;
+      this.skippingTimer = null;
+    }, 600);
+  }
+
   async skipCurrent(): Promise<void> {
-    const head = this.db
-      .prepare("SELECT id FROM queue ORDER BY position ASC LIMIT 1")
-      .get() as { id: number } | undefined;
-    if (head) this.removeQueueItem(head.id);
-    this.currentSongId = null;
+    this.armSkipGuard();
     try {
       await this.mpv.stop();
     } catch {
       /* ignore */
     }
-    void this.maybeAutoPlay().catch(() => {});
+    const head = this.db
+      .prepare("SELECT id FROM queue ORDER BY position ASC LIMIT 1")
+      .get() as { id: number } | undefined;
+    if (head) this.removeQueueItem(head.id);
+    this.currentSongId = null;
+    await this.maybeAutoPlay();
   }
 
   async replay(): Promise<void> {
@@ -405,10 +434,27 @@ export class Orchestrator extends EventEmitter {
 
   async toggleVocal(): Promise<void> {
     if (!this.currentSongId) return;
+    await this.mpv.toggleVocal();
+  }
+
+  /**
+   * Reload the currently-playing song from the start. Useful when mpv's
+   * window was closed manually (X) or AirPlay/mirror dropped — calling this
+   * makes mpv re-open the file and the host re-pushes it to the TV.
+   */
+  async reopenCurrent(): Promise<boolean> {
+    if (!this.currentSongId) return false;
     const song = this.db
       .prepare("SELECT * FROM songs WHERE id = ?")
-      .get(this.currentSongId) as Song;
-    await this.mpv.toggleVocal(song.vocal_channel);
+      .get(this.currentSongId) as Song | undefined;
+    if (!song?.local_path || !existsSync(song.local_path)) return false;
+    try {
+      await this.mpv.loadFile(song.local_path, song.vocal_channel);
+      return true;
+    } catch (err) {
+      console.error("[orchestrator] reopen failed", err);
+      return false;
+    }
   }
 
   async swapVocalChannel(): Promise<void> {
@@ -447,6 +493,10 @@ export class Orchestrator extends EventEmitter {
 
   private async onTrackEnded(): Promise<void> {
     if (!this.currentSongId) return;
+    // Same race as skipCurrent: maybeAutoPlay() will mpv.load(next), which
+    // can itself emit a spurious "stopped" event for the previous file.
+    // Arm the guard so we ignore it.
+    this.armSkipGuard();
     // remove current from queue; advance
     const head = this.db
       .prepare("SELECT id FROM queue ORDER BY position ASC LIMIT 1")

@@ -1,27 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { api, type QueueItem, type DownloadTask } from "../lib/api";
+import { api } from "../lib/api";
 import { onWs, type ManagerTask } from "../lib/ws";
+import QueueList from "../components/QueueList.vue";
 
 type Tab = "queue" | "downloads";
 const tab = ref<Tab>("queue");
 
-// --- Play queue ---------------------------------------------------------
-const items = ref<QueueItem[]>([]);
-const error = ref("");
+// --- Play queue (only used to show count next to the tab label) ----------
+const queueLength = ref(0);
 
-async function refresh() {
-  try {
-    const res = await api.listQueue();
-    items.value = res.items;
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err);
-  }
-}
-
-// --- Download manager state --------------------------------------------
+// --- Download manager state ---------------------------------------------
 const tasks = ref<Map<number, ManagerTask>>(new Map());
 const aborting = ref(false);
+const error = ref("");
 
 async function loadDownloadState() {
   try {
@@ -31,6 +23,15 @@ async function loadDownloadState() {
     tasks.value = m;
   } catch {
     /* ws will fill in */
+  }
+}
+
+async function refreshQueueCount() {
+  try {
+    const res = await api.listQueue();
+    queueLength.value = res.items.length;
+  } catch {
+    /* ignore */
   }
 }
 
@@ -56,15 +57,11 @@ const taskList = computed(() => {
 // --- WS subscriptions ---------------------------------------------------
 let unsub: (() => void) | null = null;
 onMounted(() => {
-  refresh();
+  refreshQueueCount();
   loadDownloadState();
   unsub = onWs((msg) => {
     if (msg.type === "queue.updated") {
-      refresh();
-    } else if (msg.type === "download.progress") {
-      const task = msg.payload as DownloadTask;
-      const item = items.value.find((i) => i.song.id === task.song_id);
-      if (item) item.download = task;
+      refreshQueueCount();
     } else if (msg.type === "downloads.snapshot") {
       const m = new Map<number, ManagerTask>();
       for (const t of msg.payload.tasks) m.set(t.id, t);
@@ -78,15 +75,6 @@ onMounted(() => {
 });
 onUnmounted(() => unsub?.());
 
-// --- Actions ------------------------------------------------------------
-async function remove(it: QueueItem) {
-  await api.removeQueue(it.queue_id);
-  await refresh();
-}
-async function toTop(it: QueueItem) {
-  await api.moveToFront(it.queue_id);
-  await refresh();
-}
 async function abortDownloads() {
   if (!confirm("取消所有正在下载的任务?")) return;
   aborting.value = true;
@@ -100,18 +88,6 @@ async function abortDownloads() {
 }
 
 // --- Helpers ------------------------------------------------------------
-function pct(t: DownloadTask | null): number {
-  if (!t) return 0;
-  return Math.round((t.progress ?? 0) * 100);
-}
-function dlLabel(t: DownloadTask | null): string {
-  if (!t) return "";
-  if (t.status === "done") return "已缓存";
-  if (t.status === "pending") return "排队中";
-  if (t.status === "downloading") return `下载 ${pct(t)}%`;
-  if (t.status === "failed") return "下载失败";
-  return "";
-}
 function fmtBytes(b: number | null): string {
   if (!b || b <= 0) return "0 B";
   if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
@@ -142,7 +118,7 @@ function statusIcon(state: ManagerTask["state"]): string {
         "
         @click="tab = 'queue'"
       >
-        播放队列 ({{ items.length }})
+        播放队列 ({{ queueLength }})
       </button>
       <button
         class="px-4 py-2 -mb-px border-b-2"
@@ -162,55 +138,9 @@ function statusIcon(state: ManagerTask["state"]): string {
 
     <div v-if="error" class="text-red-400 text-sm">{{ error }}</div>
 
-    <!-- ===== Play queue tab ===== -->
+    <!-- ===== Play queue tab — reuses the shared QueueList component ===== -->
     <div v-if="tab === 'queue'">
-      <div v-if="!items.length" class="text-center text-muted text-sm mt-8">
-        队列是空的,去搜歌点一首
-      </div>
-      <ul class="space-y-2">
-        <li
-          v-for="it in items"
-          :key="it.queue_id"
-          class="card space-y-1"
-          :class="{ 'ring-1 ring-accent': it.is_current }"
-        >
-          <div class="flex items-center justify-between gap-3">
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 text-xs text-muted">
-                <span class="font-mono">#{{ it.position }}</span>
-                <span v-if="it.is_current" class="text-accent">播放中</span>
-              </div>
-              <div class="truncate">{{ it.song.title }}</div>
-              <div class="text-xs text-muted truncate">
-                {{ it.song.artist }}
-              </div>
-            </div>
-            <div class="flex items-center gap-2">
-              <button
-                v-if="!it.is_current && it.position !== 1"
-                class="btn-ghost text-xs"
-                @click="toTop(it)"
-              >
-                插到下一首
-              </button>
-              <button class="btn-ghost text-xs" @click="remove(it)">
-                删除
-              </button>
-            </div>
-          </div>
-          <div v-if="it.download" class="flex items-center gap-2">
-            <div class="flex-1 h-1 bg-black/40 rounded overflow-hidden">
-              <div
-                class="h-full bg-accent transition-all"
-                :style="{ width: pct(it.download) + '%' }"
-              ></div>
-            </div>
-            <div class="text-xs text-muted w-20 text-right">
-              {{ dlLabel(it.download) }}
-            </div>
-          </div>
-        </li>
-      </ul>
+      <QueueList variant="full" />
     </div>
 
     <!-- ===== Downloads tab ===== -->
@@ -251,11 +181,7 @@ function statusIcon(state: ManagerTask["state"]): string {
         暂无下载任务。
       </div>
       <ul v-else class="space-y-2">
-        <li
-          v-for="t in taskList"
-          :key="t.id"
-          class="card space-y-1"
-        >
+        <li v-for="t in taskList" :key="t.id" class="card space-y-1">
           <div class="flex items-center gap-2">
             <span class="shrink-0 w-4 text-center">
               {{ statusIcon(t.state) }}

@@ -30,6 +30,51 @@ async function main() {
   const dbPath = resolve(root, "data", "ktv.db");
   const db = openDb(dbPath);
 
+  // Backfill artist_pinyin for rows that pre-date the column. The migration
+  // sets the column to '' by default — fill from the JS pinyin lib so old
+  // libraries work with the new artist-pinyin search without needing a rescan.
+  const stale = db
+    .prepare(
+      "SELECT id, artist FROM songs WHERE artist_pinyin = '' AND artist != ''",
+    )
+    .all() as Array<{ id: number; artist: string }>;
+  if (stale.length > 0) {
+    const { toPinyinInitials } = await import("./pinyin.ts");
+    const upd = db.prepare("UPDATE songs SET artist_pinyin = ? WHERE id = ?");
+    for (const row of stale) {
+      upd.run(toPinyinInitials(row.artist), row.id);
+    }
+    console.log(`[main] backfilled artist_pinyin for ${stale.length} songs`);
+  }
+
+  // Drop locally-imported songs whose cloud_path doesn't match the current
+  // library_path. This handles the case where the user changed library_path
+  // (e.g. switched from a mapped drive Z: to a UNC path \\nas\share). Without
+  // this, a re-scan of the new path inserts a parallel set of rows and the
+  // catalog ~doubles. Baidu-pulled songs (cloud_path doesn't start with
+  // "local://") and artist_portraits are preserved.
+  {
+    const expectedPrefix =
+      "local://" + config.library_path.replace(/\\/g, "/");
+    const orphanCount = (
+      db
+        .prepare(
+          "SELECT COUNT(*) AS c FROM songs WHERE cloud_path LIKE 'local://%' AND cloud_path NOT LIKE ?",
+        )
+        .get(expectedPrefix + "%") as { c: number }
+    ).c;
+    if (orphanCount > 0) {
+      const res = db
+        .prepare(
+          "DELETE FROM songs WHERE cloud_path LIKE 'local://%' AND cloud_path NOT LIKE ?",
+        )
+        .run(expectedPrefix + "%");
+      console.log(
+        `[main] library_path changed → dropped ${res.changes} stale local songs`,
+      );
+    }
+  }
+
   // --- OpenList subprocess --------------------------------------------------
 
   const openlistUrl = `http://localhost:${config.openlist.port}`;
@@ -70,7 +115,9 @@ async function main() {
       const png = await QRCode.toBuffer(url, {
         errorCorrectionLevel: "M",
         margin: 2,
-        width: 512,
+        // 240px gives ~8 px/module for typical LAN URLs while staying
+        // discreet as a corner overlay on a 1080p+ output.
+        width: 240,
         color: { dark: "#000000", light: "#ffffff" },
       });
       mkdirSync(resolve(root, "data"), { recursive: true });
@@ -188,6 +235,22 @@ async function main() {
   await registerSongsRoutes(fastify, db);
   await registerQueueRoutes(fastify, orchestrator);
   await registerControlRoutes(fastify, orchestrator, mpv);
+  // Static serve cached portraits (data/portraits/<sha>.{jpg,png,...}).
+  // Wikidata/Wikipedia images are CC-BY/CC-BY-SA — attribution lives on the
+  // /api/artists rows, not in the file response, but the file itself is fine
+  // to serve directly.
+  const portraitsDir = resolve(root, "data", "portraits");
+  mkdirSync(portraitsDir, { recursive: true });
+  await fastify.register(fastifyStatic, {
+    root: portraitsDir,
+    prefix: "/portraits/",
+    decorateReply: false,
+    wildcard: false,
+  });
+
+  // Admin events: portrait fetcher progress is broadcast via WS.
+  const adminEvents = new (await import("node:events")).EventEmitter();
+
   await registerAdminRoutes(
     fastify,
     scanner,
@@ -196,9 +259,11 @@ async function main() {
     () => openlistProc?.getInitialPassword() ?? null,
     db,
     config.library_path,
+    root,
+    adminEvents as Parameters<typeof registerAdminRoutes>[8],
     downloads,
   );
-  await registerWs(fastify, orchestrator, downloads);
+  await registerWs(fastify, orchestrator, adminEvents, downloads);
 
   fastify.get("/api/health", async () => {
     const songCount = (
@@ -250,6 +315,39 @@ async function main() {
     process.exit(1);
   }
 
+  // Auto-import any new MKV files in library_path on every boot. The DB is
+  // sticky across restarts (UPSERT on cloud_path), so re-runs are cheap; new
+  // downloads since last boot show up automatically without the user
+  // clicking 扫描. Runs in the background — we don't block startup on it.
+  setTimeout(() => {
+    void (async () => {
+      try {
+        const { importLocalLibrary } = await import("./local-importer.ts");
+        const before = (
+          db.prepare("SELECT COUNT(*) AS c FROM songs").get() as {
+            c: number;
+          }
+        ).c;
+        const r = await importLocalLibrary(db, config.library_path, (p) =>
+          adminEvents.emit("import.progress", p),
+        );
+        const after = (
+          db.prepare("SELECT COUNT(*) AS c FROM songs").get() as {
+            c: number;
+          }
+        ).c;
+        const added = after - before;
+        if (added > 0 || r.scanned > 0) {
+          console.log(
+            `[startup-import] scanned ${r.scanned} files, +${added} new (now ${after} in db)`,
+          );
+        }
+      } catch (err) {
+        console.warn("[startup-import] failed:", err);
+      }
+    })();
+  }, 5000);
+
   // Graceful shutdown
   const shutdown = async () => {
     console.log("\n[main] shutting down ...");
@@ -279,6 +377,16 @@ function primaryLanIp(): string | null {
   }
   return null;
 }
+
+// Last-ditch crash visibility. Without these handlers, an unhandled
+// rejection from any fire-and-forget background task would silently kill
+// the process with no stack trace in the user's terminal.
+process.on("uncaughtException", (err, origin) => {
+  console.error(`\n[uncaughtException] origin=${origin}\n`, err);
+});
+process.on("unhandledRejection", (reason, p) => {
+  console.error("\n[unhandledRejection]\n", reason, "\nat:", p);
+});
 
 main().catch((err) => {
   console.error("[main] fatal:", err);

@@ -34,5 +34,5 @@ library/
 bin/
 config.json
 
-# Claude Code local settings (per-machine)
-.claude/settings.local.json
+# Claude Code local settings + worktrees
+.claude/

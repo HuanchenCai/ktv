@@ -35,10 +35,32 @@ export type QueueItem = {
 function clientId(): string {
   let id = localStorage.getItem("ktv_client_id");
   if (!id) {
-    id = crypto.randomUUID();
+    id = generateClientId();
     localStorage.setItem("ktv_client_id", id);
   }
   return id;
+}
+
+/**
+ * Stable per-browser identifier. Doesn't need cryptographic strength — it
+ * only tags "who pointed this song" in the queue. crypto.randomUUID() is
+ * unavailable in non-secure contexts (http on a LAN IP, which is exactly
+ * how phones reach us), so we hand-roll.
+ */
+function generateClientId(): string {
+  const bytes = new Uint8Array(8);
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.getRandomValues === "function"
+  ) {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < 8; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  const hex = Array.from(bytes, (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+  return `c-${Date.now().toString(36)}-${hex}`;
 }
 
 async function request<T>(
@@ -59,22 +81,47 @@ async function request<T>(
   return (await res.json()) as T;
 }
 
-export type SearchPage = {
-  songs: Song[];
-  count: number;
-  total: number;
-  offset: number;
-  limit: number;
-};
-
 export const api = {
-  searchSongs(q: string, limit = 50, offset = 0) {
-    const u = new URLSearchParams({
-      q,
-      limit: String(limit),
-      offset: String(offset),
+  searchSongs(q: string, limit = 30, artist?: string) {
+    const u = new URLSearchParams({ q, limit: String(limit) });
+    if (artist) u.set("artist", artist);
+    return request<{ songs: Song[]; count: number }>(`/api/songs?${u}`);
+  },
+  popularArtists() {
+    return request<{
+      artists: Array<{
+        artist: string;
+        count: number;
+        portrait: string | null;
+      }>;
+    }>("/api/popular-artists");
+  },
+  fetchPortraits(opts?: { min_song_count?: number; force?: boolean }) {
+    return request<{
+      running: boolean;
+      progress: {
+        total: number;
+        done: number;
+        ok: number;
+        missed: number;
+        current: string | null;
+      } | null;
+    }>("/api/admin/fetch-portraits", {
+      method: "POST",
+      body: JSON.stringify(opts ?? {}),
     });
-    return request<SearchPage>(`/api/songs?${u}`);
+  },
+  portraitProgress() {
+    return request<{
+      running: boolean;
+      progress: {
+        total: number;
+        done: number;
+        ok: number;
+        missed: number;
+        current: string | null;
+      } | null;
+    }>("/api/admin/portrait-progress");
   },
   listQueue() {
     return request<{ items: QueueItem[] }>("/api/queue");
@@ -102,6 +149,9 @@ export const api = {
   },
   replay() {
     return request<{ ok: true }>("/api/control/replay", { method: "POST" });
+  },
+  reopen() {
+    return request<{ ok: boolean }>("/api/control/reopen", { method: "POST" });
   },
   toggleVocal() {
     return request<{ ok: true }>("/api/control/toggle-vocal", {
@@ -166,6 +216,23 @@ export const api = {
       },
     );
   },
+  importLocal(path?: string) {
+    return request<{
+      added: number;
+      skipped: number;
+      scanned: number;
+      scanned_path: string;
+    }>("/api/admin/import-local", {
+      method: "POST",
+      body: JSON.stringify(path ? { path } : {}),
+    });
+  },
+  pickFolder() {
+    return request<{ path: string | null }>("/api/admin/pick-folder", {
+      method: "POST",
+      body: "{}",
+    });
+  },
   downloadBatch(ids: number[]) {
     return request<{ enqueued: number; total_in_session: number }>(
       "/api/admin/download/batch",
@@ -194,39 +261,6 @@ export const api = {
   abortDownloads() {
     return request<{ aborted: true }>("/api/admin/download/abort", {
       method: "POST",
-    });
-  },
-  searchAll(q: string, limit = 500) {
-    const u = new URLSearchParams({ q, limit: String(limit) });
-    return request<{ songs: Song[]; count: number }>(`/api/songs?${u}`);
-  },
-  listArtists(opts: { q?: string; limit?: number; offset?: number } = {}) {
-    const u = new URLSearchParams();
-    if (opts.q) u.set("q", opts.q);
-    if (opts.limit != null) u.set("limit", String(opts.limit));
-    if (opts.offset != null) u.set("offset", String(opts.offset));
-    return request<{
-      artists: Array<{ artist: string; count: number; cached_count: number }>;
-      total: number;
-      offset: number;
-      limit: number;
-    }>(`/api/artists?${u}`);
-  },
-  songsByArtist(artist: string, limit = 1000) {
-    const u = new URLSearchParams({ artist, limit: String(limit) });
-    return request<{ songs: Song[]; count: number; total: number }>(
-      `/api/songs?${u}`,
-    );
-  },
-  importLocal(path?: string) {
-    return request<{
-      added: number;
-      skipped: number;
-      scanned: number;
-      scanned_path: string;
-    }>("/api/admin/import-local", {
-      method: "POST",
-      body: JSON.stringify(path ? { path } : {}),
     });
   },
 };

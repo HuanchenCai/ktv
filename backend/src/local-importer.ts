@@ -15,6 +15,14 @@ const VIDEO_EXTS = new Set([
   ".ts",
 ]);
 
+export type ImportProgress = {
+  phase: "listing" | "indexing" | "done";
+  current_dir?: string;
+  scanned: number;
+  added: number;
+  skipped: number;
+};
+
 /**
  * Walk a local directory, register any MKV/MP4 files as already-cached songs.
  * Useful for smoke-testing the playback pipeline without touching Baidu:
@@ -24,6 +32,7 @@ const VIDEO_EXTS = new Set([
 export async function importLocalLibrary(
   db: Db,
   libraryPath: string,
+  onProgress?: (p: ImportProgress) => void,
 ): Promise<{ added: number; skipped: number; scanned: number }> {
   let added = 0;
   let skipped = 0;
@@ -31,14 +40,23 @@ export async function importLocalLibrary(
 
   const insert = db.prepare(
     `INSERT INTO songs
-     (title, artist, lang, genre, pinyin, cloud_path, size_bytes,
+     (title, artist, lang, genre, pinyin, artist_pinyin, cloud_path, size_bytes,
       cached, local_path, vocal_channel)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 'L')
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'L')
      ON CONFLICT(cloud_path) DO UPDATE SET
-       cached=1, local_path=excluded.local_path, size_bytes=excluded.size_bytes`,
+       cached=1,
+       local_path=excluded.local_path,
+       size_bytes=excluded.size_bytes,
+       artist=excluded.artist,
+       artist_pinyin=excluded.artist_pinyin`,
   );
 
+  const tick = (phase: ImportProgress["phase"], dir?: string) => {
+    onProgress?.({ phase, current_dir: dir, scanned, added, skipped });
+  };
+
   async function walk(dir: string, artistDir: string) {
+    tick("listing", dir);
     let entries: string[] = [];
     try {
       entries = await readdir(dir);
@@ -60,6 +78,7 @@ export async function importLocalLibrary(
         const parentDir = basename(dirname(full));
         const { title, artist, lang, genre } = parseFilename(name, parentDir);
         const pinyin = toPinyinInitials(title);
+        const artistPinyin = toPinyinInitials(artist);
         const cloudPath = `local://${full.replace(/\\/g, "/")}`;
         try {
           insert.run(
@@ -68,11 +87,13 @@ export async function importLocalLibrary(
             lang,
             genre,
             pinyin,
+            artistPinyin,
             cloudPath,
             st.size,
             full,
           );
           added++;
+          if (scanned % 25 === 0) tick("indexing", dirname(full));
         } catch {
           skipped++;
         }
@@ -83,5 +104,6 @@ export async function importLocalLibrary(
   }
 
   await walk(resolve(libraryPath), basename(libraryPath));
+  tick("done");
   return { added, skipped, scanned };
 }

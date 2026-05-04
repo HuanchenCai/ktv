@@ -3,15 +3,19 @@ import type { Db } from "./db.ts";
 import { toPinyinInitials } from "./pinyin.ts";
 
 /**
- * Parse KTV MV filename into {title, lang, genre}.
+ * Parse KTV MV filename into {title, artist, lang, genre}. The library is
+ * organized "按人分" (`<artist>/<file>.mkv`), so the parent directory name
+ * is authoritative for the artist when present.
  *
- * Observed convention (B'in MUSIC et al):
- *   如果明天世界末日[MTV]-魔幻力量-国语-流行.mkv
- *            ^title       ^artist  ^lang ^genre
+ * Observed conventions:
+ *   B'in MUSIC: title-artist-lang-genre.mkv     (title comes first)
+ *   公关流通版: artist-title-lang-genre.mkv     (artist comes first)
+ *   裸名:       title.mkv                       (no separators)
+ *   带 tag:     title[MTV]-artist-...mkv        ([MTV]/[HD]/[MV] etc.)
  *
- * But titles also sometimes carry no [MTV] tag, or artist comes from the directory.
- * We keep this tolerant: title = first segment stripped of tags; artist/lang/genre
- * optional; directory name wins for artist since user's library is organized "按人分".
+ * Heuristic: if `parentDir` matches one of the parts, use that as the
+ * artist and pick the title from the *other* candidate. Otherwise default
+ * to the B'in title-first convention.
  */
 export function parseFilename(
   filename: string,
@@ -23,14 +27,62 @@ export function parseFilename(
   genre: string | null;
 } {
   const noExt = filename.replace(/\.[^.]+$/, "");
-  const parts = noExt.split(/[-_—]/).map((s) => s.trim()).filter(Boolean);
-  // Strip [MTV] [MV] etc tags from title
   const stripTags = (s: string) => s.replace(/\[[^\]]*\]/g, "").trim();
+  const parts = noExt
+    .split(/[-_—]/)
+    .map((s) => stripTags(s))
+    .filter(Boolean);
 
-  const title = stripTags(parts[0] ?? noExt);
-  const artist = parts[1] ?? parentDir;
-  const lang = parts[2] ?? null;
-  const genre = parts[3] ?? null;
+  if (parts.length === 0) {
+    return {
+      title: noExt,
+      artist: parentDir || "unknown",
+      lang: null,
+      genre: null,
+    };
+  }
+
+  // Single-part filename: just the title.
+  if (parts.length === 1) {
+    return {
+      title: parts[0],
+      artist: parentDir || "unknown",
+      lang: null,
+      genre: null,
+    };
+  }
+
+  // If a part exactly matches the directory name, that part is the artist
+  // and we trust the directory.
+  const artistIdx = parentDir
+    ? parts.findIndex((p) => p === parentDir)
+    : -1;
+
+  let title: string;
+  let artist: string;
+  let lang: string | null = null;
+  let genre: string | null = null;
+
+  if (artistIdx === 0) {
+    // artist-title-lang-genre
+    artist = parts[0];
+    title = parts[1];
+    lang = parts[2] ?? null;
+    genre = parts[3] ?? null;
+  } else if (artistIdx > 0) {
+    // title-artist-lang-genre (artist matches dir)
+    title = parts[0];
+    artist = parts[artistIdx];
+    lang = parts[artistIdx + 1] ?? null;
+    genre = parts[artistIdx + 2] ?? null;
+  } else {
+    // No match: fall back to B'in convention. parts[1] is the artist;
+    // if absent, the directory name wins.
+    title = parts[0];
+    artist = parts[1] ?? parentDir ?? "unknown";
+    lang = parts[2] ?? null;
+    genre = parts[3] ?? null;
+  }
 
   return { title, artist: artist || "unknown", lang, genre };
 }
@@ -52,6 +104,15 @@ function isVideoFile(name: string): boolean {
   return VIDEO_EXTS.has(name.substring(i).toLowerCase());
 }
 
+export type ScanProgress = {
+  phase: "listing" | "indexing" | "done";
+  current_dir?: string;
+  files_seen: number;
+  inserted: number;
+  updated: number;
+  skipped: number;
+};
+
 export class Scanner {
   constructor(
     private db: Db,
@@ -67,7 +128,11 @@ export class Scanner {
    * to recursive if we find more subdirs.
    */
   async scan(
-    options: { maxDepth?: number; progress?: (msg: string) => void } = {},
+    options: {
+      maxDepth?: number;
+      progress?: (msg: string) => void;
+      onProgress?: (p: ScanProgress) => void;
+    } = {},
   ): Promise<{ inserted: number; updated: number; skipped: number }> {
     const maxDepth = options.maxDepth ?? 3;
     const progress = options.progress ?? ((m) => console.log(`[scan] ${m}`));
@@ -78,22 +143,37 @@ export class Scanner {
 
     const insert = this.db.prepare(
       `INSERT INTO songs
-       (title, artist, lang, genre, pinyin, cloud_path, size_bytes, vocal_channel)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       (title, artist, lang, genre, pinyin, artist_pinyin, cloud_path, size_bytes, vocal_channel)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(cloud_path) DO UPDATE SET
          title=excluded.title,
          artist=excluded.artist,
          lang=excluded.lang,
          genre=excluded.genre,
          pinyin=excluded.pinyin,
+         artist_pinyin=excluded.artist_pinyin,
          size_bytes=excluded.size_bytes`,
     );
     const exists = this.db.prepare(
       "SELECT id FROM songs WHERE cloud_path = ?",
     );
 
+    const onProgress = options.onProgress;
+    let filesSeen = 0;
+    const tick = (phase: ScanProgress["phase"], dir?: string) => {
+      onProgress?.({
+        phase,
+        current_dir: dir,
+        files_seen: filesSeen,
+        inserted,
+        updated,
+        skipped,
+      });
+    };
+
     const walk = async (path: string, depth: number, parentDir: string) => {
       if (depth > maxDepth) return;
+      tick("listing", path);
       let items: FsListItem[];
       try {
         items = await this.openlist.list(path);
@@ -106,11 +186,13 @@ export class Scanner {
         if (item.is_dir) {
           await walk(childPath, depth + 1, item.name);
         } else if (isVideoFile(item.name)) {
+          filesSeen++;
           const { title, artist, lang, genre } = parseFilename(
             item.name,
             parentDir,
           );
           const pinyinInitials = toPinyinInitials(title);
+          const artistPinyin = toPinyinInitials(artist);
           const already = exists.get(childPath);
           insert.run(
             title,
@@ -118,12 +200,15 @@ export class Scanner {
             lang,
             genre,
             pinyinInitials,
+            artistPinyin,
             childPath,
             item.size,
             "L",
           );
           if (already) updated++;
           else inserted++;
+          // Throttle progress emits to every 25 files (avoid WS flood).
+          if (filesSeen % 25 === 0) tick("indexing", path);
         } else {
           skipped++;
         }
@@ -131,7 +216,9 @@ export class Scanner {
     };
 
     progress(`scanning ${this.baiduRoot}`);
+    tick("listing");
     await walk(this.baiduRoot, 0, "");
+    tick("done");
     progress(`done — inserted=${inserted} updated=${updated} skipped=${skipped}`);
     return { inserted, updated, skipped };
   }

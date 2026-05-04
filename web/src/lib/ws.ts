@@ -18,6 +18,9 @@ export type WsMessage =
   | { type: "queue.updated" }
   | { type: "download.progress"; payload: unknown }
   | { type: "player.state"; payload: unknown }
+  | { type: "portrait.progress"; payload: unknown }
+  | { type: "scan.progress"; payload: unknown }
+  | { type: "import.progress"; payload: unknown }
   | { type: "downloads.task"; payload: ManagerTask }
   | {
       type: "downloads.snapshot";
