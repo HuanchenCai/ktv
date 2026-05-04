@@ -11,7 +11,11 @@
 
 import { EventEmitter } from "node:events";
 import { stat } from "node:fs/promises";
-import { downloadOne, mirrorDestPath } from "./baidu-downloader.ts";
+import {
+  downloadOne,
+  mirrorDestPath,
+  artistDestPath,
+} from "./baidu-downloader.ts";
 import type { Db } from "./db.ts";
 
 export type TaskState =
@@ -117,7 +121,7 @@ export class DownloadManager extends EventEmitter {
       const task: DownloadTask = {
         id: row.id,
         cloud_path: row.cloud_path,
-        dest: mirrorDestPath(row.cloud_path, this.libraryPath, this.rootPrefix),
+        dest: artistDestPath(row.cloud_path, row.artist, this.libraryPath),
         artist: row.artist,
         title: row.title,
         size_bytes: row.size_bytes,
@@ -179,20 +183,29 @@ export class DownloadManager extends EventEmitter {
 
     // Skip-check (size match) happens inside downloadOne too, but we mirror
     // the check here so we can publish a `skipped` event before we even hit
-    // the API.
+    // the API. We also accept files at the LEGACY mirrored path so the
+    // user's pre-existing 歌星分类大全/... tree is recognized as already-
+    // downloaded — the SQLite local_path then points at the legacy file.
     if (task.size_bytes != null) {
-      try {
-        const st = await stat(task.dest);
-        if (Math.abs(st.size - task.size_bytes) <= 1024) {
-          task.state = "skipped";
-          task.bytesWritten = st.size;
-          task.finishedAt = Date.now();
-          this.updateStmt.run(task.dest, task.id);
-          this.emit("task_skipped", task);
-          return;
+      const candidates = [
+        task.dest,
+        mirrorDestPath(task.cloud_path, this.libraryPath, this.rootPrefix),
+      ];
+      for (const cand of candidates) {
+        try {
+          const st = await stat(cand);
+          if (Math.abs(st.size - task.size_bytes) <= 1024) {
+            task.state = "skipped";
+            task.bytesWritten = st.size;
+            task.finishedAt = Date.now();
+            // Persist whichever location we found, not necessarily task.dest.
+            this.updateStmt.run(cand, task.id);
+            this.emit("task_skipped", task);
+            return;
+          }
+        } catch {
+          /* not present at this candidate, try next */
         }
-      } catch {
-        /* not present, proceed */
       }
     }
 

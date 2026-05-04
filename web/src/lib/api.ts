@@ -59,10 +59,22 @@ async function request<T>(
   return (await res.json()) as T;
 }
 
+export type SearchPage = {
+  songs: Song[];
+  count: number;
+  total: number;
+  offset: number;
+  limit: number;
+};
+
 export const api = {
-  searchSongs(q: string, limit = 30) {
-    const u = new URLSearchParams({ q, limit: String(limit) });
-    return request<{ songs: Song[]; count: number }>(`/api/songs?${u}`);
+  searchSongs(q: string, limit = 50, offset = 0) {
+    const u = new URLSearchParams({
+      q,
+      limit: String(limit),
+      offset: String(offset),
+    });
+    return request<SearchPage>(`/api/songs?${u}`);
   },
   listQueue() {
     return request<{ items: QueueItem[] }>("/api/queue");

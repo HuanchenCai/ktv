@@ -310,13 +310,12 @@ async function attempt_(
 }
 
 /**
- * Convert a Baidu cloud path under /KTV/ to a destination under destBase,
- * preserving the rest of the directory tree.
+ * Mirror a baidu cloud path under destBase preserving the directory tree
+ * minus a fixed prefix. Used for the LEGACY layout / for fallback checks
+ * against files the user already downloaded into the cloud-mirrored tree.
+ *
  *   /KTV/歌星分类大全/L-开头歌星6/林志炫/foo.mkv
  * -> destBase/歌星分类大全/L-开头歌星6/林志炫/foo.mkv
- *
- * Paths outside /KTV/ are written under destBase preserving the absolute path
- * minus the leading slash.
  */
 export function mirrorDestPath(
   cloudPath: string,
@@ -328,4 +327,35 @@ export function mirrorDestPath(
     : cloudPath.replace(/^\/+/, "");
   const base = destBase.replace(/[/\\]+$/, "");
   return `${base}/${rel}`;
+}
+
+/** Strip / replace characters that are illegal on Windows / SMB filenames. */
+export function sanitizeForFs(s: string): string {
+  // Windows forbids: \ / : * ? " < > |   plus control chars; trim trailing dots/spaces.
+  // We also collapse runs of underscores so multi-illegal-chars don't look ugly.
+  const cleaned = s
+    .replace(/[\\/:*?"<>|]/g, "_")
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f]/g, "")
+    .replace(/_+/g, "_")
+    .replace(/[. ]+$/, "")
+    .trim();
+  return cleaned || "未知";
+}
+
+/**
+ * Per-artist destination layout (PRIMARY for new downloads):
+ *   destBase/<sanitized artist>/<original filename>.mkv
+ *
+ * This keeps the NAS organized as one folder per artist so the user can
+ * grow the library without inheriting baidu's mixed directory layout.
+ */
+export function artistDestPath(
+  cloudPath: string,
+  artist: string,
+  destBase: string,
+): string {
+  const filename = cloudPath.substring(cloudPath.lastIndexOf("/") + 1);
+  const base = destBase.replace(/[/\\]+$/, "");
+  return `${base}/${sanitizeForFs(artist)}/${filename}`;
 }
