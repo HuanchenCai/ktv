@@ -200,6 +200,24 @@ export const api = {
     const u = new URLSearchParams({ q, limit: String(limit) });
     return request<{ songs: Song[]; count: number }>(`/api/songs?${u}`);
   },
+  listArtists(opts: { q?: string; limit?: number; offset?: number } = {}) {
+    const u = new URLSearchParams();
+    if (opts.q) u.set("q", opts.q);
+    if (opts.limit != null) u.set("limit", String(opts.limit));
+    if (opts.offset != null) u.set("offset", String(opts.offset));
+    return request<{
+      artists: Array<{ artist: string; count: number; cached_count: number }>;
+      total: number;
+      offset: number;
+      limit: number;
+    }>(`/api/artists?${u}`);
+  },
+  songsByArtist(artist: string, limit = 1000) {
+    const u = new URLSearchParams({ artist, limit: String(limit) });
+    return request<{ songs: Song[]; count: number; total: number }>(
+      `/api/songs?${u}`,
+    );
+  },
   importLocal(path?: string) {
     return request<{
       added: number;

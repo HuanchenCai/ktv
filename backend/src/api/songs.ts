@@ -59,14 +59,50 @@ export async function registerSongsRoutes(
     return row;
   });
 
-  fastify.get("/api/artists", async () => {
-    const rows = db
-      .prepare(
-        "SELECT artist, COUNT(*) AS count FROM songs GROUP BY artist ORDER BY count DESC",
-      )
-      .all();
-    return { artists: rows };
-  });
+  fastify.get<{ Querystring: { limit?: string; offset?: string; q?: string } }>(
+    "/api/artists",
+    async (req) => {
+      const limit = Math.min(
+        500,
+        Math.max(1, parseInt(req.query.limit ?? "100", 10)),
+      );
+      const offset = Math.max(0, parseInt(req.query.offset ?? "0", 10));
+      const q = (req.query.q ?? "").trim();
+
+      // Only consider songs that came from the user's Baidu /KTV tree.
+      const baseWhere = "WHERE cloud_path LIKE '/KTV/%'";
+      const filterWhere = q
+        ? baseWhere + " AND artist LIKE ?"
+        : baseWhere;
+      const params: Array<string | number> = q ? [`%${q}%`] : [];
+
+      const total = (
+        db
+          .prepare(
+            `SELECT COUNT(DISTINCT artist) AS c FROM songs ${filterWhere}`,
+          )
+          .get(...params) as { c: number }
+      ).c;
+
+      const rows = db
+        .prepare(
+          `SELECT artist,
+                  COUNT(*) AS count,
+                  SUM(cached) AS cached_count
+           FROM songs
+           ${filterWhere}
+           GROUP BY artist
+           ORDER BY count DESC, artist COLLATE NOCASE
+           LIMIT ? OFFSET ?`,
+        )
+        .all(...params, limit, offset) as Array<{
+        artist: string;
+        count: number;
+        cached_count: number;
+      }>;
+      return { artists: rows, total, offset, limit };
+    },
+  );
 
   fastify.get("/api/stats", async () => {
     const total = (

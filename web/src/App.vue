@@ -6,7 +6,10 @@ import { startWs, wsStatus } from "./lib/ws";
 onMounted(() => startWs());
 
 const route = useRoute();
-const tab = computed(() => route.path.split("/")[1] ?? "search");
+const tab = computed(() => {
+  const seg = route.path.split("/")[1] ?? "";
+  return seg || "home";
+});
 
 const wsDotClass = computed(() => ({
   "bg-green-400": wsStatus.value === "open",
@@ -14,17 +17,24 @@ const wsDotClass = computed(() => ({
   "bg-red-400": wsStatus.value === "closed",
 }));
 
-const navItems = [
-  { to: "/search", label: "搜歌", icon: "🔍" },
-  { to: "/queue", label: "已点", icon: "📋" },
-  { to: "/now", label: "播放", icon: "🎤" },
-  { to: "/downloads", label: "下载", icon: "⬇" },
+// Desktop nav: search + queue + controls (search lives in Home).
+const desktopNav = [
+  { to: "/", key: "home", label: "首页", icon: "🏠" },
+  { to: "/queue", key: "queue", label: "已点", icon: "📋" },
+  { to: "/now", key: "now", label: "控制", icon: "🎤" },
+];
+
+// Mobile nav splits home into Home / Search to match small screens.
+const mobileNav = [
+  { to: "/", key: "home", label: "首页", icon: "🏠" },
+  { to: "/search", key: "search", label: "搜歌", icon: "🔍" },
+  { to: "/queue", key: "queue", label: "已点", icon: "📋" },
+  { to: "/now", key: "now", label: "控制", icon: "🎤" },
 ];
 </script>
 
 <template>
   <div class="flex flex-col h-full">
-    <!-- Top header — both desktop and mobile -->
     <header
       class="flex items-center justify-between px-4 py-2 border-b border-white/5 shrink-0"
     >
@@ -33,19 +43,16 @@ const navItems = [
         <span class="font-semibold tracking-wide">KTV</span>
       </div>
 
-      <!-- Desktop nav: inline horizontal -->
+      <!-- Desktop top nav -->
       <nav class="hidden md:flex gap-1 items-center">
         <RouterLink
-          v-for="item in navItems"
+          v-for="item in desktopNav"
           :key="item.to"
           :to="item.to"
           class="desktop-tab"
-          :class="{
-            active: tab === item.to.replace('/', ''),
-          }"
+          :class="{ active: tab === item.key }"
         >
-          <span>{{ item.icon }}</span>
-          <span>{{ item.label }}</span>
+          <span>{{ item.icon }}</span><span>{{ item.label }}</span>
         </RouterLink>
         <RouterLink
           to="/admin"
@@ -56,13 +63,11 @@ const navItems = [
         </RouterLink>
       </nav>
 
-      <!-- Mobile: show admin link only (other tabs are bottom-nav) -->
+      <!-- Mobile: only admin link in header -->
       <RouterLink to="/admin" class="text-xs text-muted md:hidden">admin</RouterLink>
     </header>
 
-    <main
-      class="flex-1 overflow-y-auto pb-16 md:pb-0"
-    >
+    <main class="flex-1 overflow-y-auto pb-16 md:pb-0">
       <div class="max-w-6xl mx-auto">
         <RouterView />
       </div>
@@ -73,11 +78,11 @@ const navItems = [
       class="md:hidden fixed bottom-0 left-0 right-0 flex bg-panel border-t border-white/5"
     >
       <RouterLink
-        v-for="item in navItems"
+        v-for="item in mobileNav"
         :key="item.to"
         :to="item.to"
         class="tab"
-        :class="{ active: tab === item.to.replace('/', '') }"
+        :class="{ active: tab === item.key }"
       >
         <span>{{ item.icon }}</span><span>{{ item.label }}</span>
       </RouterLink>
