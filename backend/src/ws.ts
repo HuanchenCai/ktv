@@ -10,6 +10,7 @@ type WsMessage =
   | { type: "portrait.progress"; payload: unknown }
   | { type: "scan.progress"; payload: unknown }
   | { type: "import.progress"; payload: unknown }
+  | { type: "baidu-scan.progress"; payload: unknown }
   | { type: "downloads.task"; payload: MgrTask }
   | {
       type: "downloads.snapshot";
@@ -58,6 +59,9 @@ export async function registerWs(
   );
   adminEvents?.on("import.progress", (p) =>
     broadcast({ type: "import.progress", payload: p }),
+  );
+  adminEvents?.on("baidu-scan.progress", (p) =>
+    broadcast({ type: "baidu-scan.progress", payload: p }),
   );
 
   if (downloads) {

@@ -14,6 +14,15 @@ export type ManagerTask = {
   finishedAt: number | null;
 };
 
+export type BaiduScanProgress = {
+  phase: "listing" | "indexing" | "done";
+  current_dir: string | null;
+  dirs: number;
+  inserted: number;
+  updated: number;
+  skipped: number;
+};
+
 export type WsMessage =
   | { type: "queue.updated" }
   | { type: "download.progress"; payload: unknown }
@@ -21,6 +30,7 @@ export type WsMessage =
   | { type: "portrait.progress"; payload: unknown }
   | { type: "scan.progress"; payload: unknown }
   | { type: "import.progress"; payload: unknown }
+  | { type: "baidu-scan.progress"; payload: BaiduScanProgress }
   | { type: "downloads.task"; payload: ManagerTask }
   | {
       type: "downloads.snapshot";

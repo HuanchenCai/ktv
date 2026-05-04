@@ -7,6 +7,10 @@ import { importLocalLibrary } from "../local-importer.ts";
 import { fetchPortraits, type PortraitProgress } from "../portrait-fetcher.ts";
 import type { ScanProgress } from "../scanner.ts";
 import type { ImportProgress } from "../local-importer.ts";
+import {
+  scanBaidu,
+  type BaiduScanProgress,
+} from "../baidu-scanner.ts";
 import { pickFolder } from "../folder-picker.ts";
 import QRCode from "qrcode";
 import { networkInterfaces } from "node:os";
@@ -16,6 +20,7 @@ export type AdminEvents = EventEmitter & {
   emit(event: "portrait.progress", data: PortraitProgress): boolean;
   emit(event: "scan.progress", data: ScanProgress): boolean;
   emit(event: "import.progress", data: ImportProgress): boolean;
+  emit(event: "baidu-scan.progress", data: BaiduScanProgress): boolean;
 };
 
 export async function registerAdminRoutes(
@@ -29,9 +34,15 @@ export async function registerAdminRoutes(
   projectRoot?: string,
   events?: AdminEvents,
   downloads?: DownloadManager,
+  baiduCreds?: { bduss?: string; stoken?: string },
 ): Promise<void> {
   let portraitJob: Promise<PortraitProgress> | null = null;
   let lastPortraitProgress: PortraitProgress | null = null;
+
+  // Baidu cloud scan: one job at a time, abortable
+  let baiduJob: Promise<unknown> | null = null;
+  let baiduAbort: AbortController | null = null;
+  let lastBaiduProgress: BaiduScanProgress | null = null;
   fastify.post<{ Body: { max_depth?: number } }>(
     "/api/admin/scan",
     async (req, rep) => {
@@ -117,6 +128,61 @@ export async function registerAdminRoutes(
       running: portraitJob !== null,
       progress: lastPortraitProgress,
     };
+  });
+
+  /**
+   * Walk the user's Baidu cloud (via cookie / BDUSS) and upsert songs into
+   * the DB as cached=0 placeholders. Same logic as the baidu-direct-scan
+   * CLI, just exposed for the web UI. Job runs in the background; progress
+   * fans out via WS as `baidu-scan.progress`.
+   */
+  fastify.post<{
+    Body: { root?: string; max_depth?: number };
+  }>("/api/admin/baidu-scan", async (req, rep) => {
+    if (!db) {
+      return rep.code(500).send({ error: "baidu-scan not wired up" });
+    }
+    if (baiduJob) {
+      return { running: true, progress: lastBaiduProgress };
+    }
+    const bduss = baiduCreds?.bduss ?? "";
+    if (!bduss) {
+      return rep.code(400).send({
+        error: "BDUSS not configured. Set baidu.bduss in config.json.",
+      });
+    }
+    baiduAbort = new AbortController();
+    baiduJob = scanBaidu(db, {
+      bduss,
+      stoken: baiduCreds?.stoken,
+      root: req.body?.root ?? "/KTV",
+      maxDepth: req.body?.max_depth ?? 20,
+      abortSignal: baiduAbort.signal,
+      onProgress: (p) => {
+        lastBaiduProgress = p;
+        events?.emit("baidu-scan.progress", p);
+      },
+    })
+      .catch((err) => {
+        console.error("[baidu-scan] failed:", err);
+      })
+      .finally(() => {
+        baiduJob = null;
+        baiduAbort = null;
+      });
+    return { running: true, progress: lastBaiduProgress };
+  });
+
+  fastify.get("/api/admin/baidu-scan/state", async () => {
+    return {
+      running: baiduJob !== null,
+      progress: lastBaiduProgress,
+    };
+  });
+
+  fastify.post("/api/admin/baidu-scan/abort", async () => {
+    if (baiduAbort) baiduAbort.abort();
+    return { aborted: true };
   });
 
   /**

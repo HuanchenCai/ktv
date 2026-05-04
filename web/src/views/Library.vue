@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed, watch } from "vue";
 import { onWs } from "../lib/ws";
+import { api } from "../lib/api";
 
 type Stats = {
   total: number;
@@ -36,6 +37,14 @@ type ImportProgress = {
   added: number;
   skipped: number;
 };
+type BaiduScanProgress = {
+  phase: "listing" | "indexing" | "done";
+  current_dir: string | null;
+  dirs: number;
+  inserted: number;
+  updated: number;
+  skipped: number;
+};
 
 const stats = ref<Stats | null>(null);
 const songs = ref<Song[]>([]);
@@ -53,6 +62,15 @@ const scanProgress = ref<ScanProgress | null>(null);
 const importProgress = ref<ImportProgress | null>(null);
 const scanning = ref(false);
 const importing = ref(false);
+
+// Baidu scan
+const baiduProgress = ref<BaiduScanProgress | null>(null);
+const baiduScanning = ref(false);
+const baiduRoot = ref("/KTV");
+
+// Selection / batch download
+const selected = ref<Set<number>>(new Set());
+const downloading = ref(false);
 
 async function loadStats() {
   try {
@@ -102,6 +120,10 @@ onMounted(() => {
       importProgress.value = m.payload as ImportProgress;
       importing.value = importProgress.value.phase !== "done";
       if (importProgress.value.phase === "done") refreshAll();
+    } else if (m.type === "baidu-scan.progress") {
+      baiduProgress.value = m.payload as BaiduScanProgress;
+      baiduScanning.value = baiduProgress.value.phase !== "done";
+      if (baiduProgress.value.phase === "done") refreshAll();
     }
   });
 });
@@ -180,6 +202,75 @@ async function startImport() {
     error.value = err instanceof Error ? err.message : String(err);
   }
 }
+
+async function startBaiduScan() {
+  baiduScanning.value = true;
+  baiduProgress.value = null;
+  error.value = "";
+  try {
+    await api.baiduScan({ root: baiduRoot.value });
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+    baiduScanning.value = false;
+  }
+}
+
+async function abortBaiduScan() {
+  try {
+    await api.baiduScanAbort();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
+function toggleSelected(id: number) {
+  const s = new Set(selected.value);
+  if (s.has(id)) s.delete(id);
+  else s.add(id);
+  selected.value = s;
+}
+
+function toggleSelectAllVisible() {
+  const allVisible = songs.value.every((s) => selected.value.has(s.id));
+  const next = new Set(selected.value);
+  if (allVisible) {
+    for (const s of songs.value) next.delete(s.id);
+  } else {
+    for (const s of songs.value) if (!s.cached) next.add(s.id);
+  }
+  selected.value = next;
+}
+
+function clearSelection() {
+  selected.value = new Set();
+}
+
+const selectedNotCachedCount = computed(() => {
+  let n = 0;
+  for (const s of songs.value) {
+    if (s.cached) continue;
+    if (selected.value.has(s.id)) n++;
+  }
+  return n;
+});
+
+async function downloadSelected() {
+  // Only send the songs that are not yet cached.
+  const ids = songs.value
+    .filter((s) => !s.cached && selected.value.has(s.id))
+    .map((s) => s.id);
+  if (ids.length === 0) return;
+  downloading.value = true;
+  error.value = "";
+  try {
+    await api.downloadBatch(ids);
+    // Don't clear selection — user might want to add more
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    downloading.value = false;
+  }
+}
 </script>
 
 <template>
@@ -245,17 +336,17 @@ async function startImport() {
       <div class="flex flex-wrap gap-2">
         <button
           class="btn-primary text-sm"
-          :disabled="scanning || importing"
+          :disabled="scanning || importing || baiduScanning"
           @click="startImport"
         >
           {{ importing ? "导入中..." : "📁 扫本地目录" }}
         </button>
         <button
           class="btn-ghost text-sm"
-          :disabled="scanning || importing"
+          :disabled="scanning || importing || baiduScanning"
           @click="startScan"
         >
-          {{ scanning ? "扫描中..." : "☁ 扫百度盘" }}
+          {{ scanning ? "OpenList 扫描中..." : "☁ 扫百度盘 (OpenList)" }}
         </button>
       </div>
       <div
@@ -275,6 +366,86 @@ async function startImport() {
         <div v-if="scanProgress.current_dir" class="truncate">
           {{ scanProgress.current_dir }}
         </div>
+      </div>
+    </div>
+
+    <!-- BAIDU DIRECT SCAN -->
+    <div class="card space-y-3">
+      <div class="flex items-baseline justify-between">
+        <h3 class="h-section">百度盘扫描（直连 / BDUSS）</h3>
+        <span class="text-xs text-muted">
+          扫完会在曲库里多出 cached=0 的占位条目，点歌时会自动下载
+        </span>
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <label class="text-xs text-muted shrink-0">起始路径:</label>
+        <input
+          v-model="baiduRoot"
+          class="input !py-1.5 !px-3 text-sm w-48"
+          placeholder="/KTV"
+          spellcheck="false"
+        />
+        <button
+          class="btn-primary text-sm"
+          :disabled="baiduScanning || scanning || importing"
+          @click="startBaiduScan"
+        >
+          {{ baiduScanning ? "扫描中..." : "☁ 开始扫描百度盘" }}
+        </button>
+        <button
+          v-if="baiduScanning"
+          class="btn-ghost text-xs"
+          @click="abortBaiduScan"
+        >
+          中止
+        </button>
+      </div>
+      <div
+        v-if="baiduProgress"
+        class="text-xs text-muted space-y-1.5"
+      >
+        <div>
+          阶段:
+          {{
+            baiduProgress.phase === "listing"
+              ? "列目录"
+              : baiduProgress.phase === "indexing"
+                ? "入库"
+                : "完成"
+          }}
+          · 目录 {{ baiduProgress.dirs }} · 新增 {{ baiduProgress.inserted }}
+          · 更新 {{ baiduProgress.updated }} · 跳过
+          {{ baiduProgress.skipped }}
+        </div>
+        <div v-if="baiduProgress.current_dir" class="truncate">
+          {{ baiduProgress.current_dir }}
+        </div>
+      </div>
+    </div>
+
+    <!-- SELECTION TOOLBAR -->
+    <div
+      v-if="selected.size > 0"
+      class="card flex items-center justify-between gap-3 ring-1 ring-accent/40 bg-accent/5"
+    >
+      <div class="text-sm">
+        已选 <span class="font-bold text-accent">{{ selected.size }}</span>
+        首
+        <span class="text-xs text-muted">
+          （其中 {{ selectedNotCachedCount }} 首未缓存可下载）
+        </span>
+      </div>
+      <div class="flex gap-2">
+        <button
+          class="btn-primary text-sm"
+          :disabled="downloading || selectedNotCachedCount === 0"
+          @click="downloadSelected"
+        >
+          {{ downloading ? "提交中..." : `下载选中 (${selectedNotCachedCount})` }}
+        </button>
+        <button class="btn-ghost text-sm" @click="clearSelection">
+          清除选择
+        </button>
       </div>
     </div>
 
@@ -302,6 +473,21 @@ async function startImport() {
         <table class="w-full text-sm">
           <thead class="bg-elevated/60 text-muted text-xs uppercase tracking-wider">
             <tr>
+              <th class="px-3 py-2 w-10 text-center">
+                <input
+                  type="checkbox"
+                  :checked="
+                    songs.length > 0 &&
+                    songs.every((s) => selected.has(s.id))
+                  "
+                  :indeterminate.prop="
+                    songs.some((s) => selected.has(s.id)) &&
+                    !songs.every((s) => selected.has(s.id))
+                  "
+                  title="全选/全不选（仅未缓存会进入下载）"
+                  @change="toggleSelectAllVisible"
+                />
+              </th>
               <th class="px-3 py-2 text-left cursor-pointer" @click="setSort('title')">
                 标题{{ caret('title') }}
               </th>
@@ -335,7 +521,16 @@ async function startImport() {
               v-for="s in songs"
               :key="s.id"
               class="border-t border-border/40 hover:bg-panel-hover/40 transition-colors"
+              :class="selected.has(s.id) ? 'bg-accent/5' : ''"
             >
+              <td class="px-3 py-2 text-center">
+                <input
+                  type="checkbox"
+                  :checked="selected.has(s.id)"
+                  :title="s.cached ? '已缓存（无需下载，但可选）' : '选中以批量下载'"
+                  @change="toggleSelected(s.id)"
+                />
+              </td>
               <td class="px-3 py-2 truncate max-w-[260px]">{{ s.title }}</td>
               <td class="px-3 py-2 truncate max-w-[160px]">{{ s.artist }}</td>
               <td class="px-3 py-2 text-muted">{{ s.lang ?? "—" }}</td>
@@ -358,7 +553,7 @@ async function startImport() {
               </td>
             </tr>
             <tr v-if="!songs.length && !loading">
-              <td colspan="7" class="text-center text-muted py-8 text-sm">
+              <td colspan="8" class="text-center text-muted py-8 text-sm">
                 没有匹配的歌
               </td>
             </tr>

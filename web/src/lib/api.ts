@@ -263,4 +263,38 @@ export const api = {
       method: "POST",
     });
   },
+  baiduScan(opts?: { root?: string; max_depth?: number }) {
+    return request<{
+      running: boolean;
+      progress: {
+        phase: string;
+        current_dir: string | null;
+        dirs: number;
+        inserted: number;
+        updated: number;
+        skipped: number;
+      } | null;
+    }>("/api/admin/baidu-scan", {
+      method: "POST",
+      body: JSON.stringify(opts ?? {}),
+    });
+  },
+  baiduScanState() {
+    return request<{
+      running: boolean;
+      progress: {
+        phase: string;
+        current_dir: string | null;
+        dirs: number;
+        inserted: number;
+        updated: number;
+        skipped: number;
+      } | null;
+    }>("/api/admin/baidu-scan/state");
+  },
+  baiduScanAbort() {
+    return request<{ aborted: true }>("/api/admin/baidu-scan/abort", {
+      method: "POST",
+    });
+  },
 };

@@ -262,6 +262,10 @@ async function main() {
     root,
     adminEvents as Parameters<typeof registerAdminRoutes>[8],
     downloads,
+    {
+      bduss: process.env.BDUSS || config.baidu.bduss,
+      stoken: process.env.STOKEN || config.baidu.stoken,
+    },
   );
   await registerWs(fastify, orchestrator, adminEvents, downloads);
 
