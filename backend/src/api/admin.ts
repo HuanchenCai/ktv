@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { Scanner } from "../scanner.ts";
 import type { OpenListClient } from "../openlist-client.ts";
 import type { Db } from "../db.ts";
+import type { DownloadManager } from "../download-manager.ts";
 import { importLocalLibrary } from "../local-importer.ts";
 import QRCode from "qrcode";
 import { networkInterfaces } from "node:os";
@@ -14,6 +15,7 @@ export async function registerAdminRoutes(
   getOpenlistInitialPassword: () => string | null = () => null,
   db?: Db,
   libraryPath?: string,
+  downloads?: DownloadManager,
 ): Promise<void> {
   fastify.post<{ Body: { max_depth?: number } }>(
     "/api/admin/scan",
@@ -57,6 +59,50 @@ export async function registerAdminRoutes(
    * Bypass for smoke-testing playback without Baidu configuration.
    * Optional body: { path: "H:/SomeFolder" } to scan a different directory.
    */
+  // --- batch download via BDUSS-direct downloader -------------------------
+  if (downloads && db) {
+    fastify.post<{ Body: { ids?: number[] } }>(
+      "/api/admin/download/batch",
+      async (req, rep) => {
+        const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+        if (ids.length === 0) {
+          return rep.code(400).send({ error: "ids required" });
+        }
+        const placeholders = ids.map(() => "?").join(",");
+        const rows = db
+          .prepare(
+            `SELECT id, title, artist, cloud_path, size_bytes
+             FROM songs WHERE id IN (${placeholders})`,
+          )
+          .all(...ids) as Array<{
+          id: number;
+          title: string;
+          artist: string;
+          cloud_path: string;
+          size_bytes: number | null;
+        }>;
+        const added = downloads.enqueue(rows);
+        downloads.start();
+        return {
+          enqueued: added.length,
+          total_in_session: downloads.getCounts().total,
+        };
+      },
+    );
+
+    fastify.get("/api/admin/download/state", async () => {
+      return {
+        counts: downloads.getCounts(),
+        tasks: downloads.getTasks(),
+      };
+    });
+
+    fastify.post("/api/admin/download/abort", async () => {
+      downloads.abortAll();
+      return { aborted: true };
+    });
+  }
+
   fastify.post<{ Body: { path?: string } }>(
     "/api/admin/import-local",
     async (req, rep) => {

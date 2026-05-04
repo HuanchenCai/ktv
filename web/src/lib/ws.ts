@@ -1,9 +1,28 @@
 import { ref } from "vue";
 
+export type ManagerTask = {
+  id: number;
+  cloud_path: string;
+  artist: string;
+  title: string;
+  size_bytes: number | null;
+  state: "queued" | "downloading" | "done" | "failed" | "skipped";
+  bytesWritten: number;
+  bytesTotal: number | null;
+  error: string | null;
+  startedAt: number | null;
+  finishedAt: number | null;
+};
+
 export type WsMessage =
   | { type: "queue.updated" }
   | { type: "download.progress"; payload: unknown }
-  | { type: "player.state"; payload: unknown };
+  | { type: "player.state"; payload: unknown }
+  | { type: "downloads.task"; payload: ManagerTask }
+  | {
+      type: "downloads.snapshot";
+      payload: { tasks: ManagerTask[]; counts: Record<string, number> };
+    };
 
 export const wsStatus = ref<"connecting" | "open" | "closed">("connecting");
 

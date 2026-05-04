@@ -154,6 +154,40 @@ export const api = {
       },
     );
   },
+  downloadBatch(ids: number[]) {
+    return request<{ enqueued: number; total_in_session: number }>(
+      "/api/admin/download/batch",
+      {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      },
+    );
+  },
+  downloadState() {
+    return request<{
+      counts: Record<string, number>;
+      tasks: Array<{
+        id: number;
+        cloud_path: string;
+        artist: string;
+        title: string;
+        size_bytes: number | null;
+        state: "queued" | "downloading" | "done" | "failed" | "skipped";
+        bytesWritten: number;
+        bytesTotal: number | null;
+        error: string | null;
+      }>;
+    }>("/api/admin/download/state");
+  },
+  abortDownloads() {
+    return request<{ aborted: true }>("/api/admin/download/abort", {
+      method: "POST",
+    });
+  },
+  searchAll(q: string, limit = 500) {
+    const u = new URLSearchParams({ q, limit: String(limit) });
+    return request<{ songs: Song[]; count: number }>(`/api/songs?${u}`);
+  },
   importLocal(path?: string) {
     return request<{
       added: number;

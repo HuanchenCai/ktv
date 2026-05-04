@@ -14,6 +14,7 @@ import type { OpenListProcess } from "./openlist-spawner.ts";
 import { MpvController } from "./mpv-controller.ts";
 import { Orchestrator } from "./queue-orchestrator.ts";
 import { Scanner } from "./scanner.ts";
+import { DownloadManager } from "./download-manager.ts";
 import { registerSongsRoutes } from "./api/songs.ts";
 import { registerQueueRoutes } from "./api/queue.ts";
 import { registerControlRoutes } from "./api/control.ts";
@@ -99,9 +100,26 @@ async function main() {
     );
   }
 
+  // --- Download manager (BDUSS-direct) -------------------------------------
+
+  if (!config.baidu.bduss) {
+    console.warn(
+      "[main] config.baidu.bduss is empty — auto-download via BDUSS will not work. " +
+        "Set it in config.json or BDUSS env var.",
+    );
+  }
+  const downloads = new DownloadManager({
+    db,
+    bduss: process.env.BDUSS || config.baidu.bduss,
+    stoken: process.env.STOKEN || config.baidu.stoken,
+    libraryPath: config.library_path,
+    concurrency: config.baidu.concurrency,
+    requestDelayMs: config.baidu.request_delay_ms,
+  });
+
   // --- Orchestrator ---------------------------------------------------------
 
-  const orchestrator = new Orchestrator(db, openlist, mpv, config.library_path, {
+  const orchestrator = new Orchestrator(db, downloads, mpv, config.library_path, {
     prefetchAhead: config.scheduler.prefetch_ahead,
     pollIntervalMs: config.scheduler.poll_interval_ms,
     baiduRoot: config.baidu_root,
@@ -178,8 +196,9 @@ async function main() {
     () => openlistProc?.getInitialPassword() ?? null,
     db,
     config.library_path,
+    downloads,
   );
-  await registerWs(fastify, orchestrator);
+  await registerWs(fastify, orchestrator, downloads);
 
   fastify.get("/api/health", async () => {
     const songCount = (

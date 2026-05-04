@@ -1,10 +1,9 @@
 import { EventEmitter } from "node:events";
-import { basename, resolve, dirname } from "node:path";
 import { existsSync } from "node:fs";
-import type { OpenListClient, OpenListTask } from "./openlist-client.ts";
 import type { MpvController } from "./mpv-controller.ts";
 import { withTransaction } from "./db.ts";
 import type { Db, Song, QueueItem, DownloadTask } from "./db.ts";
+import type { DownloadManager, DownloadTask as MgrTask } from "./download-manager.ts";
 
 export type QueueViewRow = {
   queue_id: number;
@@ -43,7 +42,7 @@ export class Orchestrator extends EventEmitter {
 
   constructor(
     private db: Db,
-    private openlist: OpenListClient,
+    private downloads: DownloadManager,
     private mpv: MpvController,
     private libraryPath: string,
     private opts: {
@@ -64,16 +63,56 @@ export class Orchestrator extends EventEmitter {
     this.mpv.on("paused", () => this.broadcastPlayerState());
     this.mpv.on("resumed", () => this.broadcastPlayerState());
     this.mpv.on("track-started", () => this.broadcastPlayerState());
+
+    // Bridge DownloadManager events into the legacy `download.progress`
+    // event so the existing /ws fan-out keeps working unchanged.
+    this.downloads.on("task_started", (t: MgrTask) =>
+      this.handleManagerEvent(t, "downloading"),
+    );
+    this.downloads.on("task_progress", (t: MgrTask) =>
+      this.handleManagerEvent(t, "downloading"),
+    );
+    this.downloads.on("task_done", (t: MgrTask) => {
+      this.handleManagerEvent(t, "done");
+      void this.maybeAutoPlay().catch(() => {});
+    });
+    this.downloads.on("task_skipped", (t: MgrTask) => {
+      this.handleManagerEvent(t, "done");
+      void this.maybeAutoPlay().catch(() => {});
+    });
+    this.downloads.on("task_failed", (t: MgrTask) =>
+      this.handleManagerEvent(t, "failed"),
+    );
+  }
+
+  private handleManagerEvent(
+    t: MgrTask,
+    status: "pending" | "downloading" | "done" | "failed",
+  ): void {
+    const progress =
+      status === "done"
+        ? 1
+        : t.bytesTotal && t.bytesTotal > 0
+          ? Math.min(1, t.bytesWritten / t.bytesTotal)
+          : 0;
+    const legacy: DownloadTask = {
+      id: 0, // synthetic — frontend keys on song_id
+      song_id: t.id,
+      openlist_task_id: null,
+      status,
+      progress,
+      speed_bps: null,
+      eta_seconds: null,
+      started_at: t.startedAt,
+      finished_at: t.finishedAt,
+      error: t.error,
+    };
+    this.emit("download.progress", legacy);
   }
 
   start(): void {
-    if (this.running) return;
+    // No periodic polling needed — DownloadManager pushes events directly.
     this.running = true;
-    this.pollTimer = setInterval(() => {
-      void this.tick().catch((err) => {
-        console.error("[orchestrator] tick error", err);
-      });
-    }, this.opts.pollIntervalMs);
   }
 
   stop(): void {
@@ -217,20 +256,45 @@ export class Orchestrator extends EventEmitter {
       )
       .all() as Array<{ queue_id: number; position: number; song_id: number }>;
 
+    const mgrTasks = new Map(
+      this.downloads.getTasks().map((t) => [t.id, t]),
+    );
     return rows.map((r) => {
       const song = this.db
         .prepare("SELECT * FROM songs WHERE id = ?")
         .get(r.song_id) as Song;
-      const download = this.db
-        .prepare(
-          "SELECT * FROM download_tasks WHERE song_id = ? ORDER BY id DESC LIMIT 1",
-        )
-        .get(r.song_id) as DownloadTask | undefined;
+      const t = mgrTasks.get(r.song_id);
+      const download: DownloadTask | null = t
+        ? {
+            id: 0,
+            song_id: t.id,
+            openlist_task_id: null,
+            status:
+              t.state === "downloading"
+                ? "downloading"
+                : t.state === "done" || t.state === "skipped"
+                  ? "done"
+                  : t.state === "failed"
+                    ? "failed"
+                    : "pending",
+            progress:
+              t.state === "done" || t.state === "skipped"
+                ? 1
+                : t.bytesTotal && t.bytesTotal > 0
+                  ? Math.min(1, t.bytesWritten / t.bytesTotal)
+                  : 0,
+            speed_bps: null,
+            eta_seconds: null,
+            started_at: t.startedAt,
+            finished_at: t.finishedAt,
+            error: t.error,
+          }
+        : null;
       return {
         queue_id: r.queue_id,
         position: r.position,
         song,
-        download: download ?? null,
+        download,
         is_current:
           this.currentSongId === r.song_id && r.position === 1,
       };
@@ -257,141 +321,26 @@ export class Orchestrator extends EventEmitter {
       )
       .all(this.opts.prefetchAhead + 1) as Array<{ song_id: number }>;
 
+    const songsToFetch: Song[] = [];
     for (const { song_id } of top) {
       const song = this.db
         .prepare("SELECT * FROM songs WHERE id = ?")
-        .get(song_id) as Song;
+        .get(song_id) as Song | undefined;
+      if (!song) continue;
       if (song.cached) continue;
-
-      const activeTask = this.db
-        .prepare(
-          "SELECT * FROM download_tasks WHERE song_id = ? AND status IN ('pending','downloading') LIMIT 1",
-        )
-        .get(song_id) as DownloadTask | undefined;
-      if (activeTask) continue;
-
-      const info = this.db
-        .prepare(
-          `INSERT INTO download_tasks (song_id, status, progress, started_at)
-           VALUES (?, 'pending', 0, ?)`,
-        )
-        .run(song_id, Date.now());
-      const task = this.db
-        .prepare("SELECT * FROM download_tasks WHERE id = ?")
-        .get(info.lastInsertRowid) as DownloadTask;
-      this.emit("download.progress", task);
-
-      const cloud = song.cloud_path;
-      const srcDir = cloud.substring(0, cloud.lastIndexOf("/")) || "/";
-      const srcFilename = basename(cloud);
-      try {
-        await this.openlist.copy({
-          src_dir: srcDir,
-          // dst_dir is OpenList's "local" storage mount path (user configured).
-          // We assume it's mounted at `/local` per the M0 runbook convention.
-          dst_dir: "/local",
-          names: [srcFilename],
-        });
-        this.db
-          .prepare(
-            "UPDATE download_tasks SET status = 'downloading' WHERE id = ?",
-          )
-          .run(task.id);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.db
-          .prepare(
-            "UPDATE download_tasks SET status = 'failed', error = ?, finished_at = ? WHERE id = ?",
-          )
-          .run(msg, Date.now(), task.id);
-        this.emit("download.progress", {
-          ...task,
-          status: "failed",
-          error: msg,
-        });
-      }
+      songsToFetch.push(song);
     }
-  }
-
-  // --- Polling loop --------------------------------------------------------
-
-  private async tick(): Promise<void> {
-    // Refresh open tasks from OpenList, match them to our pending rows, update.
-    let undone: OpenListTask[] = [];
-    let done: OpenListTask[] = [];
-    try {
-      [undone, done] = await Promise.all([
-        this.openlist.undoneCopyTasks(),
-        this.openlist.doneCopyTasks(),
-      ]);
-    } catch {
-      return; // openlist not ready yet
-    }
-
-    const pendingRows = this.db
-      .prepare(
-        "SELECT * FROM download_tasks WHERE status IN ('pending','downloading')",
-      )
-      .all() as DownloadTask[];
-
-    for (const row of pendingRows) {
-      const song = this.db
-        .prepare("SELECT * FROM songs WHERE id = ?")
-        .get(row.song_id) as Song;
-      const filename = basename(song.cloud_path);
-      const match =
-        undone.find((t) => t.name.includes(filename)) ??
-        done.find((t) => t.name.includes(filename));
-
-      if (!match) continue;
-
-      // Map OpenList state (best effort — task APIs return numeric state codes).
-      if (match.state === 2) {
-        // success
-        const localPath = resolve(this.libraryPath, filename);
-        this.db
-          .prepare(
-            `UPDATE download_tasks SET status='done', progress=1, finished_at=?, openlist_task_id=? WHERE id = ?`,
-          )
-          .run(Date.now(), match.id, row.id);
-        this.db
-          .prepare(
-            `UPDATE songs SET cached=1, local_path=? WHERE id = ?`,
-          )
-          .run(localPath, song.id);
-        const finalTask = this.db
-          .prepare("SELECT * FROM download_tasks WHERE id = ?")
-          .get(row.id) as DownloadTask;
-        this.emit("download.progress", finalTask);
-        void this.maybeAutoPlay().catch(() => {});
-      } else if (match.state === 4 || match.state === 3) {
-        // errored / cancelled
-        this.db
-          .prepare(
-            `UPDATE download_tasks SET status='failed', error=?, finished_at=?, openlist_task_id=? WHERE id = ?`,
-          )
-          .run(match.error ?? match.status, Date.now(), match.id, row.id);
-        this.emit("download.progress", {
-          ...row,
-          status: "failed",
-          error: match.error ?? null,
-        });
-      } else {
-        // running
-        const progress = Math.min(1, Math.max(0, (match.progress ?? 0) / 100));
-        this.db
-          .prepare(
-            `UPDATE download_tasks SET status='downloading', progress=?, openlist_task_id=? WHERE id = ?`,
-          )
-          .run(progress, match.id, row.id);
-        this.emit("download.progress", {
-          ...row,
-          status: "downloading",
-          progress,
-          openlist_task_id: match.id,
-        });
-      }
-    }
+    if (songsToFetch.length === 0) return;
+    this.downloads.enqueue(
+      songsToFetch.map((s) => ({
+        id: s.id,
+        title: s.title,
+        artist: s.artist,
+        cloud_path: s.cloud_path,
+        size_bytes: s.size_bytes,
+      })),
+    );
+    this.downloads.start();
   }
 
   // --- Playback ------------------------------------------------------------
@@ -509,5 +458,3 @@ export class Orchestrator extends EventEmitter {
   }
 }
 
-// Silence unused import warning during development
-void dirname;
