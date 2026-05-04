@@ -69,13 +69,16 @@ const wsDotClass = computed(() => ({
           </div>
         </div>
       </div>
+      <!-- Phone uses the bottom tab bar (搜歌/已点/播放), and the desktop-
+           oriented routes (曲库/歌手/管理) don't fit the phone layout, so
+           the top nav is desktop-only. -->
       <nav
+        v-if="!isPhoneTabRoute"
         class="flex items-center gap-2.5 text-xs text-muted"
         :class="isTv ? '' : 'gap-1.5'"
       >
         <!-- "/" so the redirect rule decides per device width: phones go to
-             /search, big screens (host browser → AirPlay) go to /tv. Hard-
-             coding /tv would lock phones into the desktop 3-column layout. -->
+             /search, big screens (host browser → AirPlay) go to /tv. -->
         <RouterLink
           to="/"
           class="hover:text-white transition-colors px-1.5 py-1 rounded"
