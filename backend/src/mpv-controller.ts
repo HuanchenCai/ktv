@@ -94,6 +94,20 @@ export class MpvController extends EventEmitter {
   private audioMode: "stereo" | "tracks" = "stereo";
   private audioTrackIds: number[] = [];
 
+  /**
+   * EOF watcher state. mpv with `--keep-open=yes` (which we need so the
+   * AirPlay/Miracast mirror doesn't drop when a song ends) does NOT emit
+   * a `stopped` event at EOF — it just sets pause=true and parks on the
+   * last frame. Without an active poller, the orchestrator never learns
+   * the song ended and queue advance silently breaks.
+   *
+   * Strategy: poll `eof-reached`; on the false→true edge, emit
+   * `track-ended` exactly once. Reset the latch on every load so the next
+   * song's EOF fires again.
+   */
+  private eofPoller: ReturnType<typeof setInterval> | null = null;
+  private eofLatched = false;
+
   constructor(opts: {
     vocalChannelDefault: "L" | "R";
     binaryPath?: string;
@@ -194,14 +208,43 @@ export class MpvController extends EventEmitter {
 
     this.mpv.on("stopped", () => this.emit("track-ended"));
     this.mpv.on("started", () => {
+      // New file is playing — clear the EOF latch so the next end-of-file
+      // can fire track-ended again.
+      this.eofLatched = false;
       void this.detectAudioMode().catch(() => {});
       void this.applyQrOverlay().catch(() => {});
       this.emit("track-started", { channel: this.currentChannel });
     });
     this.mpv.on("resumed", () => this.emit("resumed"));
     this.mpv.on("paused", () => this.emit("paused"));
+    this.startEofPoller();
     this.ready = true;
     console.log("[mpv] ready");
+  }
+
+  /**
+   * Poll mpv's `eof-reached` property. With --keep-open=yes mpv pauses on
+   * the last frame instead of emitting "stopped", so we synthesize a
+   * track-ended event ourselves.
+   */
+  private startEofPoller(): void {
+    if (this.eofPoller) return;
+    this.eofPoller = setInterval(async () => {
+      if (!this.mpv) return;
+      try {
+        const eof = await this.mpv.getProperty("eof-reached");
+        if (eof === true && !this.eofLatched) {
+          this.eofLatched = true;
+          this.emit("track-ended");
+        } else if (eof !== true && this.eofLatched) {
+          // Belt-and-suspenders: if something else cleared eof-reached
+          // (loadfile, seek-back, etc.), reset the latch.
+          this.eofLatched = false;
+        }
+      } catch {
+        /* ignore — likely no file loaded yet */
+      }
+    }, 500);
   }
 
   /**
@@ -264,10 +307,22 @@ export class MpvController extends EventEmitter {
   async loadFile(path: string, vocalChannel?: "L" | "R"): Promise<void> {
     if (!this.mpv) throw new Error("mpv not started");
     if (vocalChannel) this.vocalChannelDefault = vocalChannel;
+    // Clear the EOF latch immediately so a poll between load() returning
+    // and the "started" event can't accidentally re-fire track-ended.
+    this.eofLatched = false;
     // Reset to a known state before loading; channel will be re-applied
     // by detectAudioMode after the 'started' event.
     await Promise.resolve(this.removeKaraokeFilter()).catch(() => {});
     await Promise.resolve(this.mpv.load(path, "replace"));
+    // mpv may carry pause=true from a previous EOF (--keep-open=yes parks
+    // pause=true on the last frame). Force play so the new song actually
+    // starts — without this, "next" after a parked end-of-file would load
+    // but stay paused.
+    try {
+      await Promise.resolve(this.mpv.setProperty("pause", false));
+    } catch {
+      /* ignore */
+    }
     this.currentChannel = "both";
   }
 
@@ -380,6 +435,10 @@ export class MpvController extends EventEmitter {
   }
 
   async shutdown(): Promise<void> {
+    if (this.eofPoller) {
+      clearInterval(this.eofPoller);
+      this.eofPoller = null;
+    }
     if (this.mpv) {
       try {
         await Promise.resolve(this.mpv.command("overlay-remove", [0]));
