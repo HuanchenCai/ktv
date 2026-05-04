@@ -14,6 +14,7 @@
     "install:all": "npm install && cd web && npm install",
     "fetch:openlist": "node scripts/fetch-openlist.mjs",
     "scan": "tsx scripts/scan.mjs",
+    "scan:baidu": "tsx scripts/baidu-direct-scan.mjs",
     "download": "tsx scripts/download.mjs",
     "doctor": "node scripts/doctor.mjs",
     "setup": "npm run install:all && npm run fetch:openlist && npm run build:web",
