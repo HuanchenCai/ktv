@@ -65,20 +65,31 @@ export async function registerSongsRoutes(
     return map;
   }
 
-  fastify.get("/api/artists", async () => {
-    const rows = db
-      .prepare(
-        "SELECT artist, COUNT(*) AS count FROM songs GROUP BY artist ORDER BY count DESC",
-      )
-      .all() as Array<{ artist: string; count: number }>;
-    const portraits = portraitMap();
-    return {
-      artists: rows.map((r) => ({
-        ...r,
-        portrait: portraits.get(r.artist) ?? null,
-      })),
-    };
-  });
+  fastify.get<{ Querystring: { sort?: string } }>(
+    "/api/artists",
+    async (req) => {
+      const sort = req.query.sort === "count" ? "count" : "pinyin";
+      const orderClause =
+        sort === "count" ? "ORDER BY count DESC" : "ORDER BY pinyin ASC";
+      const rows = db
+        .prepare(
+          `SELECT
+             artist,
+             COUNT(*) AS count,
+             COALESCE(MAX(artist_pinyin), '') AS pinyin
+           FROM songs GROUP BY artist
+           ${orderClause}`,
+        )
+        .all() as Array<{ artist: string; count: number; pinyin: string }>;
+      const portraits = portraitMap();
+      return {
+        artists: rows.map((r) => ({
+          ...r,
+          portrait: portraits.get(r.artist) ?? null,
+        })),
+      };
+    },
+  );
 
   /**
    * Curated KTV artists that actually have songs in the user's library.
@@ -87,18 +98,32 @@ export async function registerSongsRoutes(
    */
   fastify.get("/api/popular-artists", async () => {
     const rows = db
-      .prepare("SELECT artist, COUNT(*) AS count FROM songs GROUP BY artist")
-      .all() as Array<{ artist: string; count: number }>;
-    const counts = new Map(rows.map((r) => [r.artist, r.count]));
+      .prepare(
+        `SELECT artist, COUNT(*) AS count,
+                COALESCE(MAX(artist_pinyin), '') AS pinyin
+         FROM songs GROUP BY artist`,
+      )
+      .all() as Array<{ artist: string; count: number; pinyin: string }>;
+    const map = new Map(rows.map((r) => [r.artist, r]));
     const present = new Set(rows.map((r) => r.artist));
     const portraits = portraitMap();
-    const ordered = popularArtistsInLibrary(present);
+    const inLib = popularArtistsInLibrary(present);
+    // Pinyin alphabetical: 周笔畅(zbc) before 周杰伦(zjl) because b < j.
+    inLib.sort((a, b) => {
+      const pa = map.get(a)?.pinyin ?? "";
+      const pb = map.get(b)?.pinyin ?? "";
+      return pa.localeCompare(pb);
+    });
     return {
-      artists: ordered.map((a) => ({
-        artist: a,
-        count: counts.get(a) ?? 0,
-        portrait: portraits.get(a) ?? null,
-      })),
+      artists: inLib.map((a) => {
+        const r = map.get(a);
+        return {
+          artist: a,
+          count: r?.count ?? 0,
+          pinyin: r?.pinyin ?? "",
+          portrait: portraits.get(a) ?? null,
+        };
+      }),
     };
   });
 
