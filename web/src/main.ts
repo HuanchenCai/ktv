@@ -30,4 +30,13 @@ const router = createRouter({
   ],
 });
 
+// Belt-and-suspenders: if a phone-sized viewport lands on /tv (e.g. via a
+// stale bookmark or hardcoded link), bounce it back to /search instead of
+// rendering the 1004px-wide 3-column layout into a 400px-wide phone.
+router.beforeEach((to) => {
+  if (to.path === "/tv" && !isWideScreen()) {
+    return { path: "/search", query: to.query };
+  }
+});
+
 createApp(App).use(router).mount("#app");

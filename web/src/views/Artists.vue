@@ -24,6 +24,8 @@ onMounted(load);
 const filtered = computed(() => {
   const term = q.value.trim().toLowerCase();
   if (!term) return all.value;
+  // r.artist may be Chinese; toLowerCase() is a no-op on CJK, so this works
+  // both for "Jay" → "jay chou" and for "周杰伦" → exact substring match.
   return all.value.filter((r) => r.artist.toLowerCase().includes(term));
 });
 

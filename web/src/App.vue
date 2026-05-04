@@ -73,12 +73,15 @@ const wsDotClass = computed(() => ({
         class="flex items-center gap-2.5 text-xs text-muted"
         :class="isTv ? '' : 'gap-1.5'"
       >
+        <!-- "/" so the redirect rule decides per device width: phones go to
+             /search, big screens (host browser → AirPlay) go to /tv. Hard-
+             coding /tv would lock phones into the desktop 3-column layout. -->
         <RouterLink
-          to="/tv"
+          to="/"
           class="hover:text-white transition-colors px-1.5 py-1 rounded"
-          active-class="text-white bg-panel"
+          :class="route.path === '/tv' || route.path === '/search' ? 'text-white bg-panel' : ''"
         >
-          📺 TV
+          📺 主页
         </RouterLink>
         <RouterLink
           to="/library"
