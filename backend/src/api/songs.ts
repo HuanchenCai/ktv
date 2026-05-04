@@ -154,12 +154,37 @@ export async function registerSongsRoutes(
         )
         .get() as { c: number }
     ).c;
-    const byLang = db
+    // Many rows have garbage in `lang` (mis-parsed song titles like "马拉桑(MTV)").
+    // Only show the known language tags; everything else (and NULL) gets
+    // bucketed into "其他/未知" so the panel stays useful.
+    const KNOWN_LANGS = [
+      "国语",
+      "粤语",
+      "台语",
+      "英语",
+      "日语",
+      "韩语",
+      "闽南",
+      "其他语",
+    ] as const;
+    const placeholders = KNOWN_LANGS.map(() => "?").join(",");
+    const knownRows = db
       .prepare(
-        `SELECT COALESCE(lang, '未知') AS lang, COUNT(*) AS count
-         FROM songs GROUP BY lang ORDER BY count DESC`,
+        `SELECT lang, COUNT(*) AS count FROM songs
+         WHERE lang IN (${placeholders})
+         GROUP BY lang ORDER BY count DESC`,
       )
-      .all() as Array<{ lang: string; count: number }>;
+      .all(...KNOWN_LANGS) as Array<{ lang: string; count: number }>;
+    const otherRow = db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM songs
+         WHERE lang IS NULL OR lang NOT IN (${placeholders})`,
+      )
+      .get(...KNOWN_LANGS) as { count: number };
+    const byLang: Array<{ lang: string; count: number }> = [...knownRows];
+    if (otherRow.count > 0) {
+      byLang.push({ lang: "其他/未知", count: otherRow.count });
+    }
     const topArtists = db
       .prepare(
         `SELECT artist, COUNT(*) AS count FROM songs
