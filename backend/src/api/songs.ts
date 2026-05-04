@@ -65,32 +65,67 @@ export async function registerSongsRoutes(
     return map;
   }
 
-  fastify.get<{ Querystring: { sort?: string } }>(
-    "/api/artists",
-    async (req) => {
-      // Default back to count-desc; pinyin is opt-in via ?sort=pinyin.
-      const sort = req.query.sort === "pinyin" ? "pinyin" : "count";
-      const orderClause =
-        sort === "pinyin" ? "ORDER BY pinyin ASC" : "ORDER BY count DESC";
-      const rows = db
-        .prepare(
-          `SELECT
-             artist,
-             COUNT(*) AS count,
-             COALESCE(MAX(artist_pinyin), '') AS pinyin
-           FROM songs GROUP BY artist
-           ${orderClause}`,
-        )
-        .all() as Array<{ artist: string; count: number; pinyin: string }>;
-      const portraits = portraitMap();
-      return {
-        artists: rows.map((r) => ({
-          ...r,
-          portrait: portraits.get(r.artist) ?? null,
-        })),
-      };
-    },
-  );
+  fastify.get<{
+    Querystring: {
+      sort?: string;
+      q?: string;
+      limit?: string;
+      min_count?: string;
+    };
+  }>("/api/artists", async (req) => {
+    // Default back to count-desc; pinyin is opt-in via ?sort=pinyin.
+    const sort = req.query.sort === "pinyin" ? "pinyin" : "count";
+    const orderClause =
+      sort === "pinyin" ? "ORDER BY pinyin ASC" : "ORDER BY count DESC";
+    const q = (req.query.q ?? "").trim().toLowerCase();
+    const limit = Math.min(
+      2000,
+      Math.max(1, parseInt(req.query.limit ?? "300", 10)),
+    );
+    // Filename-parser noise creates thousands of single-song "artists".
+    // Default to filtering them out unless the caller asks otherwise.
+    const minCount = Math.max(
+      0,
+      parseInt(req.query.min_count ?? "2", 10),
+    );
+
+    const where: string[] = [];
+    const params: Array<string | number> = [];
+    if (q) {
+      where.push(
+        "(LOWER(artist) LIKE ? OR LOWER(artist_pinyin) LIKE ?)",
+      );
+      const like = `%${q}%`;
+      params.push(like, like);
+    }
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const havingSql = minCount > 1 ? `HAVING count >= ${minCount}` : "";
+
+    const sql = `SELECT
+           artist,
+           COUNT(*) AS count,
+           COALESCE(MAX(artist_pinyin), '') AS pinyin
+         FROM songs
+         ${whereSql}
+         GROUP BY artist
+         ${havingSql}
+         ${orderClause}
+         LIMIT ?`;
+    params.push(limit);
+
+    const rows = db.prepare(sql).all(...params) as Array<{
+      artist: string;
+      count: number;
+      pinyin: string;
+    }>;
+    const portraits = portraitMap();
+    return {
+      artists: rows.map((r) => ({
+        ...r,
+        portrait: portraits.get(r.artist) ?? null,
+      })),
+    };
+  });
 
   /**
    * Curated KTV artists that actually have songs in the user's library.

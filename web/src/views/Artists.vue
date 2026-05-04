@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from "vue";
+import { onMounted, ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 
 type Row = { artist: string; count: number; portrait: string | null };
@@ -7,27 +7,37 @@ type Row = { artist: string; count: number; portrait: string | null };
 const all = ref<Row[]>([]);
 const error = ref("");
 const q = ref("");
+const loading = ref(false);
 
 const router = useRouter();
 
+// Filter on the server: there are ~25k filename-parsed "artists" in the DB
+// (most with just 1 song). Pulling all of them, JSON-encoding, and rendering
+// 25k buttons in the DOM stalls the phone for several seconds. We let the
+// backend trim by query + min_count and cap to 300 results.
 async function load() {
+  loading.value = true;
   try {
-    const res = await fetch("/api/artists").then((r) => r.json());
+    const u = new URLSearchParams();
+    if (q.value.trim()) u.set("q", q.value.trim());
+    const res = await fetch(`/api/artists?${u}`).then((r) => r.json());
     all.value = res.artists ?? [];
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    loading.value = false;
   }
 }
 
 onMounted(load);
 
-const filtered = computed(() => {
-  const term = q.value.trim().toLowerCase();
-  if (!term) return all.value;
-  // r.artist may be Chinese; toLowerCase() is a no-op on CJK, so this works
-  // both for "Jay" → "jay chou" and for "周杰伦" → exact substring match.
-  return all.value.filter((r) => r.artist.toLowerCase().includes(term));
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+watch(q, () => {
+  if (debounceTimer) clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(load, 200);
 });
+
+const filtered = computed(() => all.value);
 
 // Stable per-artist accent color tile for the fallback avatar.
 function colorFor(s: string): string {
@@ -45,10 +55,6 @@ function pickArtist(a: string) {
 }
 
 const haveAny = computed(() => filtered.value.some((r) => !!r.portrait));
-const haveCounts = computed(() => ({
-  withPortrait: all.value.filter((r) => r.portrait).length,
-  total: all.value.length,
-}));
 </script>
 
 <template>
@@ -56,10 +62,8 @@ const haveCounts = computed(() => ({
     <div class="flex items-baseline justify-between">
       <h1 class="text-2xl font-bold">全部歌手</h1>
       <span class="text-xs text-muted">
-        {{ filtered.length }} / {{ haveCounts.total }} 位
-        <span v-if="haveCounts.total" class="text-muted/70">
-          · {{ haveCounts.withPortrait }} 张头像
-        </span>
+        {{ filtered.length }} 位
+        <span v-if="loading" class="text-muted/70">· 加载中</span>
       </span>
     </div>
 
