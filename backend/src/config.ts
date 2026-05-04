@@ -29,6 +29,14 @@ const ConfigSchema = z.object({
     poll_interval_ms: z.number().int().min(100).max(10000).default(500),
   }),
   vocal_channel_default: z.enum(["L", "R"]).default("L"),
+  baidu: z
+    .object({
+      bduss: z.string().default(""),
+      stoken: z.string().default(""),
+      concurrency: z.number().int().min(1).max(8).default(4),
+      request_delay_ms: z.number().int().min(0).max(5000).default(300),
+    })
+    .default({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

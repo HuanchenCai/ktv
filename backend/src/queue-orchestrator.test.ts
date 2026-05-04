@@ -29,16 +29,53 @@ function makeMpvStub(): {
   };
 }
 
-function makeOpenlistStub() {
-  return {
-    copy: async () => {},
-    list: async () => [],
-    undoneCopyTasks: async () => [],
-    doneCopyTasks: async () => [],
-    cancelCopyTask: async () => {},
-    ping: async () => true,
-    setToken: () => {},
+function makeDownloadsStub() {
+  // Orchestrator subscribes to DownloadManager events and may call enqueue/
+  // start. We track enqueued songs as 'queued' tasks so listQueue() sees a
+  // non-null download field, mirroring the contract that scheduleDownloads
+  // creates a pending row immediately.
+  const e = new EventEmitter();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tasks = new Map<number, any>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const enqueue = (rows: Array<any>) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const added: Array<any> = [];
+    for (const r of rows) {
+      if (tasks.has(r.id)) continue;
+      const t = {
+        id: r.id,
+        cloud_path: r.cloud_path,
+        artist: r.artist,
+        title: r.title,
+        size_bytes: r.size_bytes ?? null,
+        state: "queued" as const,
+        bytesWritten: 0,
+        bytesTotal: r.size_bytes ?? null,
+        error: null,
+        startedAt: null,
+        finishedAt: null,
+        dest: `/tmp/ktv-test/${r.artist}/${r.id}.mkv`,
+      };
+      tasks.set(r.id, t);
+      added.push(t);
+    }
+    return added;
   };
+  return Object.assign(e, {
+    enqueue,
+    start: () => {},
+    abortAll: () => {},
+    getTasks: () => [...tasks.values()],
+    getCounts: () => ({
+      queued: tasks.size,
+      downloading: 0,
+      done: 0,
+      failed: 0,
+      skipped: 0,
+      total: tasks.size,
+    }),
+  });
 }
 
 function setupDb(): Db {
@@ -54,17 +91,17 @@ function setupDb(): Db {
 
 function makeOrchestrator(db: Db) {
   const mpv = makeMpvStub();
-  const ol = makeOpenlistStub();
+  const downloads = makeDownloadsStub();
   const orch = new Orchestrator(
     db,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ol as any,
+    downloads as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mpv as any,
     "/tmp/ktv-test",
     { prefetchAhead: 2, pollIntervalMs: 60_000, baiduRoot: "/baidu" },
   );
-  return { orch, mpv, ol };
+  return { orch, mpv, downloads };
 }
 
 function queuePositions(db: Db): number[] {

@@ -49,25 +49,36 @@ function makeMpv() {
   return stub;
 }
 
-function makeOpenlist() {
-  return {
-    copy: async () => {},
-    list: async () => [],
-    undoneCopyTasks: async () => [],
-    doneCopyTasks: async () => [],
-    cancelCopyTask: async () => {},
-    ping: async () => true,
-    setToken: () => {},
-  };
+function makeDownloads() {
+  // Stand-in for DownloadManager: EventEmitter shape + the methods the
+  // orchestrator may call. The integration tests don't exercise real
+  // downloads; they just need the orchestrator to construct cleanly.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { EventEmitter } = require("node:events") as typeof import("node:events");
+  const e = new EventEmitter();
+  return Object.assign(e, {
+    enqueue: () => [],
+    start: () => {},
+    abortAll: () => {},
+    getTasks: () => [],
+    getCounts: () => ({
+      queued: 0,
+      downloading: 0,
+      done: 0,
+      failed: 0,
+      skipped: 0,
+      total: 0,
+    }),
+  });
 }
 
 async function buildApp(db: Db) {
   const mpv = makeMpv();
-  const openlist = makeOpenlist();
+  const downloads = makeDownloads();
   const orch = new Orchestrator(
     db,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    openlist as any,
+    downloads as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mpv as any,
     "/tmp/ktv-test",
@@ -82,7 +93,7 @@ async function buildApp(db: Db) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mpv as any,
   );
-  return { app, orch, mpv, openlist };
+  return { app, orch, mpv, downloads };
 }
 
 function seedSongs(db: Db) {
