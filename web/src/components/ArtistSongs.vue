@@ -53,22 +53,31 @@ const filtered = computed(() => {
   );
 });
 
+// Plain ASCII / lowercase byte comparison — produces "dx" < "rgmtsjmr" < "zyn"
+// reliably across browsers. localeCompare can return surprising orderings
+// for short strings under some locales; this is the dumb-correct version.
+function byPinyin(a: Song, b: Song): number {
+  const pa = (a.pinyin ?? "").toLowerCase();
+  const pb = (b.pinyin ?? "").toLowerCase();
+  if (pa === pb) return 0;
+  return pa < pb ? -1 : 1;
+}
+
 const sorted = computed(() => {
   const arr = [...filtered.value];
   if (sortMode.value === "pinyin") {
-    arr.sort((a, b) => a.pinyin.localeCompare(b.pinyin));
+    arr.sort(byPinyin);
   } else if (sortMode.value === "chars") {
     arr.sort(
       (a, b) =>
-        charCount(a.title) - charCount(b.title) ||
-        a.pinyin.localeCompare(b.pinyin),
+        charCount(a.title) - charCount(b.title) || byPinyin(a, b),
     );
   } else if (sortMode.value === "year") {
     arr.sort((a, b) => {
       const ya = yearOf(a);
       const yb = yearOf(b);
       // Newer first; songs with no year guess to the bottom
-      if (ya === 0 && yb === 0) return a.pinyin.localeCompare(b.pinyin);
+      if (ya === 0 && yb === 0) return byPinyin(a, b);
       if (ya === 0) return 1;
       if (yb === 0) return -1;
       return yb - ya;

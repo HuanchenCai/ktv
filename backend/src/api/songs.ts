@@ -68,9 +68,10 @@ export async function registerSongsRoutes(
   fastify.get<{ Querystring: { sort?: string } }>(
     "/api/artists",
     async (req) => {
-      const sort = req.query.sort === "count" ? "count" : "pinyin";
+      // Default back to count-desc; pinyin is opt-in via ?sort=pinyin.
+      const sort = req.query.sort === "pinyin" ? "pinyin" : "count";
       const orderClause =
-        sort === "count" ? "ORDER BY count DESC" : "ORDER BY pinyin ASC";
+        sort === "pinyin" ? "ORDER BY pinyin ASC" : "ORDER BY count DESC";
       const rows = db
         .prepare(
           `SELECT
@@ -107,13 +108,9 @@ export async function registerSongsRoutes(
     const map = new Map(rows.map((r) => [r.artist, r]));
     const present = new Set(rows.map((r) => r.artist));
     const portraits = portraitMap();
+    // Order is the curated "recognizability" order from popular-artists.ts —
+    // most-known names first. Don't sort by pinyin/count here.
     const inLib = popularArtistsInLibrary(present);
-    // Pinyin alphabetical: 周笔畅(zbc) before 周杰伦(zjl) because b < j.
-    inLib.sort((a, b) => {
-      const pa = map.get(a)?.pinyin ?? "";
-      const pb = map.get(b)?.pinyin ?? "";
-      return pa.localeCompare(pb);
-    });
     return {
       artists: inLib.map((a) => {
         const r = map.get(a);
