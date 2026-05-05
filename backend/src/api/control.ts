@@ -68,6 +68,20 @@ export async function registerControlRoutes(
     },
   );
 
+  fastify.post<{
+    Body: { low?: number; mid?: number; high?: number; off?: boolean };
+  }>("/api/control/eq", async (req) => {
+    if (req.body?.off) {
+      await mpv.setEq(null);
+      return { ok: true, off: true };
+    }
+    const low = Number(req.body?.low ?? 0);
+    const mid = Number(req.body?.mid ?? 0);
+    const high = Number(req.body?.high ?? 0);
+    await mpv.setEq({ low, mid, high });
+    return { ok: true, low, mid, high };
+  });
+
   fastify.get("/api/player", async () => {
     const state = await mpv.getState();
     return {
