@@ -44,6 +44,7 @@ type BaiduScanProgress = {
   inserted: number;
   updated: number;
   skipped: number;
+  pruned?: number;
   error?: string | null;
 };
 
@@ -68,6 +69,7 @@ const importing = ref(false);
 const baiduProgress = ref<BaiduScanProgress | null>(null);
 const baiduScanning = ref(false);
 const baiduRoot = ref("/KTV");
+const baiduLastScannedAt = ref<number | null>(null);
 
 // Selection / batch download
 const selected = ref<Set<number>>(new Set());
@@ -134,7 +136,7 @@ async function loadSongs() {
 }
 
 async function refreshAll() {
-  await Promise.all([loadStats(), loadSongs()]);
+  await Promise.all([loadStats(), loadSongs(), loadBaiduScanState()]);
 }
 
 let unsub: (() => void) | null = null;
@@ -220,6 +222,19 @@ async function startImport() {
   }
 }
 
+async function loadBaiduScanState() {
+  try {
+    const s = await api.baiduScanState();
+    baiduLastScannedAt.value = s.last_scanned_at;
+    if (s.running && !baiduScanning.value) {
+      baiduScanning.value = true;
+    }
+    if (s.progress) baiduProgress.value = s.progress as BaiduScanProgress;
+  } catch {
+    /* ignore */
+  }
+}
+
 async function startBaiduScan() {
   baiduScanning.value = true;
   baiduProgress.value = null;
@@ -230,6 +245,15 @@ async function startBaiduScan() {
     error.value = err instanceof Error ? err.message : String(err);
     baiduScanning.value = false;
   }
+}
+
+function fmtScanTime(ts: number | null): string {
+  if (!ts) return "从未";
+  const d = new Date(ts);
+  const today = new Date();
+  if (d.toDateString() === today.toDateString())
+    return "今天 " + d.toTimeString().slice(0, 5);
+  return d.toISOString().slice(0, 10) + " " + d.toTimeString().slice(0, 5);
 }
 
 async function abortBaiduScan() {
@@ -552,7 +576,7 @@ async function downloadSelected() {
       <div class="flex items-baseline justify-between">
         <h3 class="h-section">百度盘扫描（直连 / BDUSS）</h3>
         <span class="text-xs text-muted">
-          扫完会在曲库里多出 cached=0 的占位条目，点歌时会自动下载
+          增量同步：新增的入库，百度上删除的从库里清掉（已缓存的不动）
         </span>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
@@ -577,6 +601,9 @@ async function downloadSelected() {
         >
           中止
         </button>
+        <span class="text-xs text-muted ml-auto">
+          上次扫描: {{ fmtScanTime(baiduLastScannedAt) }}
+        </span>
       </div>
       <div
         v-if="baiduProgress"
@@ -597,6 +624,9 @@ async function downloadSelected() {
           · 目录 {{ baiduProgress.dirs }} · 新增 {{ baiduProgress.inserted }}
           · 更新 {{ baiduProgress.updated }} · 跳过
           {{ baiduProgress.skipped }}
+          <span v-if="baiduProgress.pruned" class="text-rose-300">
+            · 删除 {{ baiduProgress.pruned }}
+          </span>
         </div>
         <div v-if="baiduProgress.current_dir" class="truncate">
           {{ baiduProgress.current_dir }}

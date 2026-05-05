@@ -138,6 +138,15 @@ const MIGRATIONS: Array<{ name: string; sql: string }> = [
     //   >0 = real year
     sql: "ALTER TABLE songs ADD COLUMN year_int INTEGER NOT NULL DEFAULT -1",
   },
+  {
+    name: "add last_seen_at",
+    // Set by the Baidu scanner on every UPSERT. After a scan finishes,
+    // baidu-scope rows whose last_seen_at is older than the scan's
+    // start are pruned (= the file no longer exists on Baidu). Local
+    // rows ignore this column entirely. Default NULL = "never seen by
+    // this mechanism" so existing rows aren't accidentally pruned.
+    sql: "ALTER TABLE songs ADD COLUMN last_seen_at INTEGER",
+  },
 ];
 
 const INDEXES = `

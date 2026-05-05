@@ -184,10 +184,24 @@ export async function registerAdminRoutes(
   });
 
   fastify.get("/api/admin/baidu-scan/state", async () => {
+    // MAX(last_seen_at) is the timestamp of the most-recently-finished
+    // scan (every UPSERT in the scan stamps this column). Lets the UI
+    // show "上次扫描: 2024-01-02 13:45" so the user can decide whether
+    // to bother running it again.
+    let lastScannedAt: number | null = null;
+    if (db) {
+      const r = db
+        .prepare(
+          "SELECT MAX(last_seen_at) AS m FROM songs WHERE last_seen_at IS NOT NULL",
+        )
+        .get() as { m: number | null } | undefined;
+      lastScannedAt = r?.m ?? null;
+    }
     return {
       running: baiduJob !== null,
       progress: lastBaiduProgress,
       error: lastBaiduError,
+      last_scanned_at: lastScannedAt,
     };
   });
 

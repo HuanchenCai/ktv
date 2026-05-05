@@ -301,7 +301,9 @@ export const api = {
         inserted: number;
         updated: number;
         skipped: number;
+        pruned?: number;
       } | null;
+      last_scanned_at: number | null;
     }>("/api/admin/baidu-scan/state");
   },
   baiduScanAbort() {

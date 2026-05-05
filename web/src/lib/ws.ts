@@ -21,6 +21,7 @@ export type BaiduScanProgress = {
   inserted: number;
   updated: number;
   skipped: number;
+  pruned?: number;
   error?: string | null;
 };
 
