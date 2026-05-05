@@ -82,9 +82,15 @@ async function request<T>(
 }
 
 export const api = {
-  searchSongs(q: string, limit = 30, artist?: string) {
+  searchSongs(
+    q: string,
+    limit = 30,
+    artist?: string,
+    sort?: "popular" | "pinyin" | "length" | "year",
+  ) {
     const u = new URLSearchParams({ q, limit: String(limit) });
     if (artist) u.set("artist", artist);
+    if (sort) u.set("sort", sort);
     return request<{ songs: Song[]; count: number }>(`/api/songs?${u}`);
   },
   popularArtists() {
@@ -179,6 +185,12 @@ export const api = {
     return request<{ ok: true; volume: number }>("/api/control/volume", {
       method: "POST",
       body: JSON.stringify({ volume }),
+    });
+  },
+  setEq(bands: { low: number; mid: number; high: number } | { off: true }) {
+    return request<{ ok: true }>("/api/control/eq", {
+      method: "POST",
+      body: JSON.stringify(bands),
     });
   },
   player() {

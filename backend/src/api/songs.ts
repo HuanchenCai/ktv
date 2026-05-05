@@ -6,38 +6,65 @@ export async function registerSongsRoutes(
   fastify: FastifyInstance,
   db: Db,
 ): Promise<void> {
-  fastify.get<{ Querystring: { q?: string; limit?: string; artist?: string } }>(
-    "/api/songs",
-    async (req) => {
-      const q = (req.query.q ?? "").toLowerCase().trim();
-      const limit = Math.min(
-        200,
-        Math.max(1, parseInt(req.query.limit ?? "50", 10)),
+  fastify.get<{
+    Querystring: {
+      q?: string;
+      limit?: string;
+      artist?: string;
+      sort?: string;
+    };
+  }>("/api/songs", async (req) => {
+    const q = (req.query.q ?? "").toLowerCase().trim();
+    const limit = Math.min(
+      5000,
+      Math.max(1, parseInt(req.query.limit ?? "50", 10)),
+    );
+    const artist = req.query.artist;
+    // sort: popular (default), pinyin, length, year
+    const sort = req.query.sort ?? "popular";
+
+    let sql = "SELECT * FROM songs";
+    const where: string[] = [];
+    const params: Array<string | number> = [];
+    if (q) {
+      where.push(
+        "(pinyin LIKE ? OR artist_pinyin LIKE ? OR title LIKE ? OR artist LIKE ?)",
       );
-      const artist = req.query.artist;
+      const like = `%${q}%`;
+      params.push(like, like, like, like);
+    }
+    if (artist) {
+      where.push("artist = ?");
+      params.push(artist);
+    }
+    if (where.length) sql += " WHERE " + where.join(" AND ");
+    let orderBy: string;
+    switch (sort) {
+      case "pinyin":
+        orderBy = "pinyin ASC, title ASC";
+        break;
+      case "length":
+        // LENGTH() on UTF-8: 3 bytes per CJK char, so it still sorts by
+        // visual length (and avoids needing a custom func).
+        orderBy = "LENGTH(title) ASC, title ASC";
+        break;
+      case "year":
+        // Year extraction in SQLite is fragile (no regexp). Return rows in
+        // pinyin order; the frontend re-sorts client-side via a regex on
+        // the title text.
+        orderBy = "pinyin ASC, title ASC";
+        break;
+      case "popular":
+      default:
+        orderBy = "play_count DESC, title ASC";
+        break;
+    }
+    sql += ` ORDER BY ${orderBy} LIMIT ?`;
+    params.push(limit);
 
-      let sql = "SELECT * FROM songs";
-      const where: string[] = [];
-      const params: Array<string | number> = [];
-      if (q) {
-        where.push(
-          "(pinyin LIKE ? OR artist_pinyin LIKE ? OR title LIKE ? OR artist LIKE ?)",
-        );
-        const like = `%${q}%`;
-        params.push(like, like, like, like);
-      }
-      if (artist) {
-        where.push("artist = ?");
-        params.push(artist);
-      }
-      if (where.length) sql += " WHERE " + where.join(" AND ");
-      sql += " ORDER BY play_count DESC, title ASC LIMIT ?";
-      params.push(limit);
-
-      const rows = db.prepare(sql).all(...params) as unknown as Song[];
-      return { songs: rows, count: rows.length };
-    },
-  );
+    const rows = db.prepare(sql).all(...params) as unknown as Song[];
+    return { songs: rows, count: rows.length };
+  });
 
   fastify.get<{ Params: { id: string } }>("/api/songs/:id", async (req, rep) => {
     const id = parseInt(req.params.id, 10);
