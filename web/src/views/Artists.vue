@@ -48,10 +48,10 @@ function colorFor(s: string): string {
 }
 
 function pickArtist(a: string) {
-  // /tv on desktop, /search on phone — use viewport width as the heuristic
-  // for which home to deep-link back to.
-  const isWide = window.innerWidth >= 1024;
-  router.push({ path: isWide ? "/tv" : "/search", query: { artist: a } });
+  // Always navigate to "/" — the router's redirect rule + the phone
+  // beforeEach guard pick the right home (/tv on desktop, /search on
+  // phone). Hardcoding /tv used to drag phones onto the 3-column layout.
+  router.push({ path: "/", query: { artist: a } });
 }
 
 const haveAny = computed(() => filtered.value.some((r) => !!r.portrait));

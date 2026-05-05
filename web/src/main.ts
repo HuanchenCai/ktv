@@ -30,11 +30,14 @@ const router = createRouter({
   ],
 });
 
-// Belt-and-suspenders: if a phone-sized viewport lands on /tv (e.g. via a
-// stale bookmark or hardcoded link), bounce it back to /search instead of
-// rendering the 1004px-wide 3-column layout into a 400px-wide phone.
+// The phone is the customer's remote — it should NOT see admin features.
+// Block /tv (desktop layout doesn't fit a phone), /admin / /library /
+// /artists (all desktop-oriented) on small viewports. Hiding the nav
+// items isn't enough: a stale bookmark, a typed URL, or a /tv-style
+// deep-link could still drop a phone into one of these pages.
+const DESKTOP_ONLY = new Set(["/tv", "/admin", "/library", "/artists"]);
 router.beforeEach((to) => {
-  if (to.path === "/tv" && !isWideScreen()) {
+  if (DESKTOP_ONLY.has(to.path) && !isWideScreen()) {
     return { path: "/search", query: to.query };
   }
 });
