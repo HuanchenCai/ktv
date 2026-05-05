@@ -161,25 +161,22 @@ export class MpvController extends EventEmitter {
     const mpvArgs: string[] = [
       "--keep-open=yes",
       "--idle=yes",
-      // force-window=yes keeps a black mpv window even when nothing is
-      // playing — without it, the gap between songs (or before the first
-      // song) shows the desktop, which is jarring in a karaoke setting.
-      "--force-window=yes",
+      // No --force-window: mpv stays headless until the first file
+      // loads, so on boot the TV (browser-mirrored) keeps showing the
+      // /tv page (artist list + QR code + queue) instead of a black
+      // mpv window. After the first song, the window stays open between
+      // tracks (keep-open=yes pauses on the last frame) and the
+      // orchestrator's filler logic keeps something playing if the
+      // queue head can't go yet.
       "--ontop=yes",
       "--title=KTV",
       "--cursor-autohide=1000",
       "--osc=no", // we draw our own controls in the web UI
       `--input-conf=${this.inputConfPath}`,
     ];
-    if (this.fullscreen) {
-      // True fullscreen via mpv's --fs flag — on Windows this is a
-      // borderless window stretched to the work-area BY DEFAULT (mpv
-      // doesn't take exclusive mode unless --fs-screen-name targets one),
-      // so it shouldn't trip Miracast/AirPlay refresh-rate switching.
-      // The taskbar IS hidden in this mode (which is what the user
-      // wants — they shouldn't have to double-click each song).
-      mpvArgs.push("--fs=yes");
-    }
+    // Fullscreen is applied per-load via setProperty("fullscreen", true)
+    // (see loadFile). Passing --fs=yes here would also force the idle
+    // window into existence on some Windows builds, which we don't want.
 
     // Decode the QR PNG into raw BGRA bytes upfront. mpv's `overlay-add` IPC
     // command consumes a raw BGRA file and draws on the OSD layer — that's
@@ -320,6 +317,18 @@ export class MpvController extends EventEmitter {
       await Promise.resolve(this.mpv.setProperty("pause", false));
     } catch {
       /* ignore */
+    }
+    // Drive fullscreen on every load so:
+    //   1. The first song after boot goes straight to true fullscreen
+    //      (taskbar hidden) without the user double-clicking.
+    //   2. If the user manually exited fullscreen mid-session, the next
+    //      song still re-asserts it.
+    if (this.fullscreen) {
+      try {
+        await Promise.resolve(this.mpv.setProperty("fullscreen", true));
+      } catch {
+        /* ignore */
+      }
     }
     this.currentChannel = "both";
   }
