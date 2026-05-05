@@ -38,6 +38,13 @@ export class Orchestrator extends EventEmitter {
   private pollTimer: NodeJS.Timeout | null = null;
   private running = false;
   private currentSongId: number | null = null;
+  /**
+   * True when mpv is playing a random cached song as filler because the
+   * queue head can't play yet (uncached / downloading) or the queue is
+   * empty. currentSongId stays null in this state — the filler is not a
+   * "real" current song from the queue.
+   */
+  private fillerActive = false;
   private currentChannelState: "L" | "R" | "both" = "both";
   /**
    * Race guard for skipCurrent. mpv.stop() emits a "stopped" event
@@ -170,7 +177,24 @@ export class Orchestrator extends EventEmitter {
       this.emit("queue.updated");
     }
     void this.scheduleDownloads().catch(() => {});
-    void this.maybeAutoPlay().catch(() => {});
+    // If filler was playing, stop it so the new real song can take over
+    // immediately (if cached) or so we drop back to a black mpv window
+    // (if not — the download will then resolve and play kicks in).
+    if (this.fillerActive) {
+      void (async () => {
+        try {
+          this.armSkipGuard();
+          await this.mpv.stop();
+          this.fillerActive = false;
+          await this.maybeAutoPlay();
+          await this.maybeStartIdleFallback();
+        } catch {
+          /* ignore */
+        }
+      })();
+    } else {
+      void this.maybeAutoPlay().catch(() => {});
+    }
     return item;
   }
 
@@ -360,7 +384,9 @@ export class Orchestrator extends EventEmitter {
   // --- Playback ------------------------------------------------------------
 
   private async maybeAutoPlay(): Promise<void> {
-    if (this.currentSongId !== null) return; // already playing something
+    // If a real queue song is playing, do nothing. Filler is OK to
+    // displace if the queue head is now playable.
+    if (this.currentSongId !== null) return;
 
     const head = this.db
       .prepare(
@@ -384,6 +410,9 @@ export class Orchestrator extends EventEmitter {
     }
 
     this.currentSongId = song.id;
+    // Promoting from filler → real song; clear the flag so onTrackEnded
+    // treats the next end-of-file as a real-song completion.
+    this.fillerActive = false;
     this.db
       .prepare(
         "UPDATE songs SET last_played_at = ?, play_count = play_count + 1 WHERE id = ?",
@@ -420,12 +449,18 @@ export class Orchestrator extends EventEmitter {
     } catch {
       /* ignore */
     }
-    const head = this.db
-      .prepare("SELECT id FROM queue ORDER BY position ASC LIMIT 1")
-      .get() as { id: number } | undefined;
-    if (head) this.removeQueueItem(head.id);
+    // Only pop the queue head if a REAL queue song was playing. Filler
+    // is ephemeral and isn't represented in the queue.
+    if (this.currentSongId !== null) {
+      const head = this.db
+        .prepare("SELECT id FROM queue ORDER BY position ASC LIMIT 1")
+        .get() as { id: number } | undefined;
+      if (head) this.removeQueueItem(head.id);
+    }
     this.currentSongId = null;
+    this.fillerActive = false;
     await this.maybeAutoPlay();
+    void this.maybeStartIdleFallback().catch(() => {});
   }
 
   async replay(): Promise<void> {
@@ -492,19 +527,74 @@ export class Orchestrator extends EventEmitter {
   }
 
   private async onTrackEnded(): Promise<void> {
-    if (!this.currentSongId) return;
-    // Same race as skipCurrent: maybeAutoPlay() will mpv.load(next), which
-    // can itself emit a spurious "stopped" event for the previous file.
-    // Arm the guard so we ignore it.
+    // Either a real queue song or a filler ended. If neither was playing,
+    // ignore (stale event).
+    if (this.currentSongId === null && !this.fillerActive) return;
     this.armSkipGuard();
-    // remove current from queue; advance
-    const head = this.db
-      .prepare("SELECT id FROM queue ORDER BY position ASC LIMIT 1")
-      .get() as { id: number } | undefined;
-    if (head) this.removeQueueItem(head.id);
+
+    if (this.currentSongId !== null) {
+      // Real-song completion: pop the head from the queue.
+      const head = this.db
+        .prepare("SELECT id FROM queue ORDER BY position ASC LIMIT 1")
+        .get() as { id: number } | undefined;
+      if (head) this.removeQueueItem(head.id);
+    }
+    // For filler: don't touch the queue, just clear the state.
     this.currentSongId = null;
+    this.fillerActive = false;
     this.broadcastPlayerState();
+
+    // Always re-schedule downloads after head may have changed — the new
+    // top might be a Baidu placeholder that nobody asked to download yet,
+    // and without this kick the queue silently stalls.
+    void this.scheduleDownloads().catch(() => {});
     void this.maybeAutoPlay().catch(() => {});
+    // Filler-cover: if the new head isn't immediately playable (or queue
+    // is empty), start a random cached song so the TV doesn't go black.
+    void this.maybeStartIdleFallback().catch(() => {});
+  }
+
+  /**
+   * When the queue's head can't play yet (uncached, still downloading) or
+   * the queue is empty, pick a random already-cached song and play it as
+   * filler. The TV doesn't go to the desktop and the room doesn't go
+   * silent. The filler is NOT a queue item — when it ends, onTrackEnded
+   * sees fillerActive and skips queue mutation; if a real song became
+   * playable in the meantime, maybeAutoPlay promotes it.
+   */
+  private async maybeStartIdleFallback(): Promise<void> {
+    if (this.currentSongId !== null || this.fillerActive) return;
+    // If the queue head IS playable now, the regular advance path will
+    // handle it via task_done / maybeAutoPlay — don't override.
+    const head = this.db
+      .prepare(
+        `SELECT s.id, s.cached, s.local_path FROM queue q
+         JOIN songs s ON s.id = q.song_id
+         ORDER BY q.position ASC LIMIT 1`,
+      )
+      .get() as
+      | { id: number; cached: number; local_path: string | null }
+      | undefined;
+    if (head && head.cached === 1 && head.local_path) return;
+    // Random cached song.
+    const filler = this.db
+      .prepare(
+        `SELECT id, local_path, vocal_channel FROM songs
+         WHERE cached = 1 AND local_path IS NOT NULL
+         ORDER BY RANDOM() LIMIT 1`,
+      )
+      .get() as
+      | { id: number; local_path: string; vocal_channel: "L" | "R" }
+      | undefined;
+    if (!filler || !existsSync(filler.local_path)) return;
+    try {
+      this.fillerActive = true;
+      await this.mpv.loadFile(filler.local_path, filler.vocal_channel);
+      this.broadcastPlayerState();
+    } catch (err) {
+      this.fillerActive = false;
+      console.warn("[orchestrator] idle filler load failed:", err);
+    }
   }
 }
 
