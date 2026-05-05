@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
+import ArtistTile from "../components/ArtistTile.vue";
 
 type Row = { artist: string; count: number; portrait: string | null };
 
@@ -38,14 +39,6 @@ watch(q, () => {
 });
 
 const filtered = computed(() => all.value);
-
-// Stable per-artist accent color tile for the fallback avatar.
-function colorFor(s: string): string {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  const hues = [340, 200, 160, 280, 30, 0, 220, 50, 100, 320];
-  return `hsl(${hues[Math.abs(h) % hues.length]}, 60%, 22%)`;
-}
 
 function pickArtist(a: string) {
   // Always navigate to "/" — the router's redirect rule + the phone
@@ -87,24 +80,12 @@ const haveAny = computed(() => filtered.value.some((r) => !!r.portrait));
         class="group flex flex-col items-center text-center gap-2 p-2 rounded-xl hover:bg-panel-hover transition-colors"
         @click="pickArtist(row.artist)"
       >
-        <div
-          class="relative w-20 h-20 lg:w-24 lg:h-24 rounded-full overflow-hidden ring-1 ring-border group-hover:ring-accent transition-all"
-          :style="!row.portrait ? { background: colorFor(row.artist) } : undefined"
-        >
-          <img
-            v-if="row.portrait"
-            :src="row.portrait"
-            :alt="row.artist"
-            class="w-full h-full object-cover"
-            loading="lazy"
-          />
-          <div
-            v-else
-            class="w-full h-full grid place-items-center text-2xl font-bold text-white/90"
-          >
-            {{ row.artist[0] }}
-          </div>
-        </div>
+        <ArtistTile
+          :name="row.artist"
+          :portrait="row.portrait"
+          size-class="w-20 h-20 lg:w-24 lg:h-24"
+          initial-class="text-2xl"
+        />
         <div class="font-medium text-sm leading-tight truncate w-full">
           {{ row.artist }}
         </div>

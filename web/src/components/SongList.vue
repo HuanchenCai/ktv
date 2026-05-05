@@ -4,6 +4,7 @@ import { useRoute, useRouter, RouterLink } from "vue-router";
 import { api, type Song } from "../lib/api";
 import SongRow from "./SongRow.vue";
 import PopularArtistsRail from "./PopularArtistsRail.vue";
+import ArtistTile from "./ArtistTile.vue";
 void RouterLink; // referenced in template
 
 type ArtistRow = { artist: string; count: number; portrait: string | null };
@@ -105,11 +106,24 @@ async function loadArtists() {
   }
 }
 
+// Shared by setMode / selectArtist / the q watcher so we can clear a
+// pending debounced loadArtists when an explicit handler is about to
+// fetch synchronously — otherwise resetting q.value to "" inside the
+// handler triggers a duplicate fetch ~200 ms later.
+let artistDebounce: ReturnType<typeof setTimeout> | null = null;
+function clearArtistDebounce() {
+  if (artistDebounce) {
+    clearTimeout(artistDebounce);
+    artistDebounce = null;
+  }
+}
+
 function setMode(m: ListMode) {
   if (mode.value === m) return;
   mode.value = m;
   selectedArtist.value = null;
   q.value = "";
+  clearArtistDebounce();
   const query = { ...route.query };
   if (m === "artists") query.mode = "artists";
   else delete query.mode;
@@ -119,29 +133,27 @@ function setMode(m: ListMode) {
   else run("");
 }
 
-function colorFor(s: string): string {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  const hues = [340, 200, 160, 280, 30, 0, 220, 50, 100, 320];
-  return `hsl(${hues[Math.abs(h) % hues.length]}, 60%, 22%)`;
-}
-
 onMounted(async () => {
   // Honor ?artist=… and ?mode= in the URL so /artists or the rail can
   // deep-link a filter and the back button restores the current view.
   const fromUrl = (route.query.artist as string | undefined) ?? null;
   if (fromUrl) selectedArtist.value = fromUrl;
   if (route.query.mode === "artists") mode.value = "artists";
-  await Promise.all([run(""), loadPortraits()]);
-  if (mode.value === "artists" && !selectedArtist.value) loadArtists();
+  // Skip the heat-search song fetch when we're going to render the
+  // artist grid anyway — its results are unused in that view.
+  const inArtistGrid =
+    mode.value === "artists" && !selectedArtist.value;
+  const fetches: Array<Promise<unknown>> = [loadPortraits()];
+  if (inArtistGrid) fetches.push(loadArtists());
+  else fetches.push(run(""));
+  await Promise.all(fetches);
 });
 
 // In "artists" mode (no specific artist selected), q reloads the artist
 // grid; in song-list mode, q is the song text search.
-let artistDebounce: ReturnType<typeof setTimeout> | null = null;
 watch(q, () => {
   if (mode.value !== "artists" || selectedArtist.value) return;
-  if (artistDebounce) clearTimeout(artistDebounce);
+  clearArtistDebounce();
   artistDebounce = setTimeout(loadArtists, 200);
 });
 
@@ -190,6 +202,7 @@ watch(sort, () => run(q.value));
 function selectArtist(name: string | null) {
   selectedArtist.value = selectedArtist.value === name ? null : name;
   q.value = "";
+  clearArtistDebounce();
   // Default to pinyin order when entering artist mode (popularity sort
   // doesn't mean much within a single artist's discography).
   sort.value = selectedArtist.value ? "pinyin" : "popular";
@@ -316,24 +329,12 @@ async function add(song: Song, top: boolean) {
         class="group flex flex-col items-center text-center gap-2 p-2 rounded-xl hover:bg-panel-hover transition-colors"
         @click="selectArtist(row.artist)"
       >
-        <div
-          class="w-16 h-16 lg:w-20 lg:h-20 rounded-full overflow-hidden ring-1 ring-border group-hover:ring-accent transition-all"
-          :style="!row.portrait ? { background: colorFor(row.artist) } : undefined"
-        >
-          <img
-            v-if="row.portrait"
-            :src="row.portrait"
-            :alt="row.artist"
-            class="w-full h-full object-cover"
-            loading="lazy"
-          />
-          <div
-            v-else
-            class="w-full h-full grid place-items-center text-xl font-bold text-white/90"
-          >
-            {{ row.artist[0] }}
-          </div>
-        </div>
+        <ArtistTile
+          :name="row.artist"
+          :portrait="row.portrait"
+          size-class="w-16 h-16 lg:w-20 lg:h-20"
+          initial-class="text-xl"
+        />
         <div class="font-medium text-xs leading-tight truncate w-full">
           {{ row.artist }}
         </div>

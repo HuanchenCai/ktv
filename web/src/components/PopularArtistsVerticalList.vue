@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api } from "../lib/api";
+import { artistColor as colorFor } from "../lib/artist-color";
 
 type Row = { artist: string; count: number; portrait: string | null };
 
@@ -22,13 +23,6 @@ async function load() {
 }
 
 onMounted(load);
-
-function colorFor(s: string): string {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  const hues = [340, 200, 160, 280, 30, 0, 220, 50, 100, 320];
-  return `hsl(${hues[Math.abs(h) % hues.length]}, 60%, 22%)`;
-}
 
 function pick(a: string) {
   const next = selected.value === a ? null : a;
