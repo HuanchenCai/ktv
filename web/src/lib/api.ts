@@ -309,4 +309,19 @@ export const api = {
       method: "POST",
     });
   },
+  dedupe(apply: boolean) {
+    return request<{
+      dry_run: boolean;
+      groups_with_dupes: number | string;
+      candidates_to_delete: number;
+      deleted: number;
+      sample: Array<{
+        kept: { id: number; title: string; artist: string };
+        removed: Array<{ id: number; title: string; artist: string }>;
+      }>;
+    }>("/api/admin/dedupe", {
+      method: "POST",
+      body: JSON.stringify({ apply }),
+    });
+  },
 };

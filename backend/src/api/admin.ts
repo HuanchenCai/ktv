@@ -195,6 +195,145 @@ export async function registerAdminRoutes(
   });
 
   /**
+   * Dedupe the songs library by (artist, normalized title).
+   *
+   * Normalization: lowercase, NFKC, drop ALL bracketed annotations such as
+   * [HD] / (MV) / 【MTV】 / 【演唱会版】 — those are publisher tags, not
+   * different songs. But a literal "演唱会" / "现场" / "MV" / "MTV" word
+   * in the title is treated as a *different* song variant (kept).
+   *
+   * Among duplicates we KEEP the row with the strongest provenance:
+   *   1. cached + local file exists  (we have it on disk)
+   *   2. cached but local missing
+   *   3. cloud_path starts with "local://" (intent: local library)
+   *   4. anything else (Baidu placeholder)
+   * On ties, lowest id wins (oldest row).
+   *
+   * Defaults to dry_run=true. Pass { apply: true } to actually delete.
+   */
+  fastify.post<{ Body: { apply?: boolean } }>(
+    "/api/admin/dedupe",
+    async (req) => {
+      if (!db) return { error: "no db" };
+      const apply = req.body?.apply === true;
+
+      // Tag = a *different* variant — keep these even if title-base matches.
+      const variantWords = [
+        "演唱会", "现场", "Live", "live", "LIVE",
+      ];
+      const variantRe = new RegExp(`(${variantWords.join("|")})`);
+
+      function normTitle(raw: string): { base: string; variantTag: string } {
+        let s = (raw ?? "").trim();
+        // Strip all bracketed annotations (any of () [] 【】 （）).
+        s = s
+          .replace(/[\[【(（][^\]】)）]*[\]】)）]/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+        // Capture variant words in the surviving title (live, 演唱会, ...)
+        const m = s.match(variantRe);
+        const variantTag = m ? m[1] : "";
+        // Drop the variant word from the comparison base too — but the
+        // tag itself is what differentiates rows of the same song.
+        const base = s.replace(variantRe, "").trim().toLowerCase();
+        return { base, variantTag };
+      }
+
+      type Row = {
+        id: number;
+        title: string;
+        artist: string;
+        cached: number;
+        local_path: string | null;
+        cloud_path: string;
+      };
+      const rows = db
+        .prepare(
+          `SELECT id, title, artist, cached, local_path, cloud_path
+           FROM songs ORDER BY id ASC`,
+        )
+        .all() as Row[];
+
+      // Group key = artist (lowercased+trimmed) + normalized title base
+      // + variant tag. Different variants (live vs studio) get different
+      // keys so they don't collapse.
+      const fs = await import("node:fs");
+      function score(r: Row): number {
+        if (
+          r.cached === 1 &&
+          r.local_path &&
+          fs.existsSync(r.local_path)
+        )
+          return 4;
+        if (r.cached === 1) return 3;
+        if (r.cloud_path.startsWith("local://")) return 2;
+        return 1;
+      }
+
+      const groups = new Map<string, Row[]>();
+      for (const r of rows) {
+        const a = (r.artist ?? "").trim().toLowerCase();
+        if (!a || !r.title) continue;
+        const { base, variantTag } = normTitle(r.title);
+        if (!base) continue;
+        const key = `${a}${base}${variantTag}`;
+        const arr = groups.get(key);
+        if (arr) arr.push(r);
+        else groups.set(key, [r]);
+      }
+
+      const toDelete: number[] = [];
+      const sample: Array<{ kept: Row; removed: Row[] }> = [];
+      for (const arr of groups.values()) {
+        if (arr.length < 2) continue;
+        // Keep highest-scoring; ties → lowest id.
+        arr.sort((a, b) => {
+          const s = score(b) - score(a);
+          if (s !== 0) return s;
+          return a.id - b.id;
+        });
+        const [kept, ...rest] = arr;
+        for (const r of rest) toDelete.push(r.id);
+        if (sample.length < 20) sample.push({ kept, removed: rest });
+      }
+
+      let deleted = 0;
+      if (apply && toDelete.length) {
+        // Refuse to delete a row that's currently in the queue. Drop those
+        // ids from the delete list.
+        const inQueue = new Set(
+          (
+            db
+              .prepare("SELECT song_id FROM queue")
+              .all() as Array<{ song_id: number }>
+          ).map((r) => r.song_id),
+        );
+        const safe = toDelete.filter((id) => !inQueue.has(id));
+        const stmt = db.prepare("DELETE FROM songs WHERE id = ?");
+        for (const id of safe) {
+          stmt.run(id);
+          deleted++;
+        }
+      }
+
+      return {
+        dry_run: !apply,
+        groups_with_dupes: sample.length === 20 ? "20+" : sample.length,
+        candidates_to_delete: toDelete.length,
+        deleted,
+        sample: sample.slice(0, 10).map((g) => ({
+          kept: { id: g.kept.id, title: g.kept.title, artist: g.kept.artist },
+          removed: g.removed.map((r) => ({
+            id: r.id,
+            title: r.title,
+            artist: r.artist,
+          })),
+        })),
+      };
+    },
+  );
+
+  /**
    * Pop up a native folder picker on the host machine and return whatever
    * the user selected. Used by the admin page so the user can graphically
    * choose a folder instead of typing its absolute path. Network shares

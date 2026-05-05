@@ -73,6 +73,20 @@ const baiduRoot = ref("/KTV");
 const selected = ref<Set<number>>(new Set());
 const downloading = ref(false);
 
+// Dedupe
+type DedupeResult = {
+  dry_run: boolean;
+  groups_with_dupes: number | string;
+  candidates_to_delete: number;
+  deleted: number;
+  sample: Array<{
+    kept: { id: number; title: string; artist: string };
+    removed: Array<{ id: number; title: string; artist: string }>;
+  }>;
+};
+const dedupePreview = ref<DedupeResult | null>(null);
+const dedupeBusy = ref(false);
+
 async function loadStats() {
   try {
     stats.value = await fetch("/api/library/stats").then((r) => r.json());
@@ -257,6 +271,36 @@ const selectedNotCachedCount = computed(() => {
   return n;
 });
 
+async function dedupePreviewRun() {
+  dedupeBusy.value = true;
+  error.value = "";
+  try {
+    dedupePreview.value = await api.dedupe(false);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    dedupeBusy.value = false;
+  }
+}
+async function dedupeApply() {
+  if (!dedupePreview.value) return;
+  if (
+    !confirm(
+      `确认删除 ${dedupePreview.value.candidates_to_delete} 个重复条目? 仅删除数据库行，不动磁盘文件。`,
+    )
+  )
+    return;
+  dedupeBusy.value = true;
+  try {
+    dedupePreview.value = await api.dedupe(true);
+    await refreshAll();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    dedupeBusy.value = false;
+  }
+}
+
 async function downloadSelected() {
   // Only send the songs that are not yet cached.
   const ids = songs.value
@@ -368,6 +412,66 @@ async function downloadSelected() {
         <div>{{ scanProgress.phase === "listing" ? "枚举目录" : "入库" }}：见 {{ scanProgress.files_seen }} 文件，新增 {{ scanProgress.inserted }}，更新 {{ scanProgress.updated }}</div>
         <div v-if="scanProgress.current_dir" class="truncate">
           {{ scanProgress.current_dir }}
+        </div>
+      </div>
+    </div>
+
+    <!-- DEDUPE -->
+    <div class="card space-y-3">
+      <div class="flex items-baseline justify-between">
+        <h3 class="h-section">查重 / 去重</h3>
+        <span class="text-xs text-muted">
+          按 (歌手 + 规整后的歌名) 合并；MV/演唱会版/Live 视为不同变体保留
+        </span>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button
+          class="btn-ghost text-sm"
+          :disabled="dedupeBusy"
+          @click="dedupePreviewRun"
+        >
+          {{ dedupeBusy ? "扫描中..." : "🔍 预览重复" }}
+        </button>
+        <button
+          v-if="dedupePreview && dedupePreview.candidates_to_delete > 0"
+          class="btn-primary text-sm"
+          :disabled="dedupeBusy"
+          @click="dedupeApply"
+        >
+          ✂ 删除 {{ dedupePreview.candidates_to_delete }} 个重复
+        </button>
+      </div>
+      <div v-if="dedupePreview" class="text-xs text-muted space-y-2">
+        <div>
+          重复组: {{ dedupePreview.groups_with_dupes }} · 待删除:
+          {{ dedupePreview.candidates_to_delete }}
+          <span v-if="dedupePreview.deleted > 0" class="text-emerald-400">
+            · 已删除 {{ dedupePreview.deleted }}
+          </span>
+          <span v-if="dedupePreview.dry_run" class="text-amber-400">
+            · 仅预览
+          </span>
+        </div>
+        <div
+          v-if="dedupePreview.sample.length"
+          class="space-y-1 max-h-60 overflow-y-auto"
+        >
+          <div
+            v-for="(g, i) in dedupePreview.sample"
+            :key="i"
+            class="border-l-2 border-emerald-500/50 pl-2"
+          >
+            <div class="text-emerald-300 truncate">
+              保留 #{{ g.kept.id }} {{ g.kept.artist }} - {{ g.kept.title }}
+            </div>
+            <div
+              v-for="r in g.removed"
+              :key="r.id"
+              class="text-rose-300/70 truncate pl-3"
+            >
+              ✗ #{{ r.id }} {{ r.artist }} - {{ r.title }}
+            </div>
+          </div>
         </div>
       </div>
     </div>
