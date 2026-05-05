@@ -137,7 +137,19 @@ export async function scanBaidu(
        last_seen_at=excluded.last_seen_at`,
   );
   const scanStartedAt = Date.now();
-  const exists = db.prepare("SELECT id FROM songs WHERE cloud_path = ?");
+  // Pre-load every existing Baidu cloud_path into memory so the per-file
+  // "is this an insert or an update?" check is an O(1) hash hit instead
+  // of a SQLite point-lookup. For a 50k-file library that's ~50k saved
+  // round-trips. The set grows as we INSERT new rows.
+  const known = new Set<string>(
+    (
+      db
+        .prepare(
+          "SELECT cloud_path FROM songs WHERE cloud_path NOT LIKE 'local://%'",
+        )
+        .all() as Array<{ cloud_path: string }>
+    ).map((r) => r.cloud_path),
+  );
 
   const stats: BaiduScanProgress = {
     phase: "listing",
@@ -192,7 +204,7 @@ export async function scanBaidu(
         );
         const pinyin = toPinyinInitials(title);
         const artistPinyin = toPinyinInitials(artist);
-        const already = exists.get(childPath);
+        const already = known.has(childPath);
         insert.run(
           title,
           artist,
@@ -206,8 +218,12 @@ export async function scanBaidu(
           extractYear(title),
           scanStartedAt,
         );
-        if (already) stats.updated++;
-        else stats.inserted++;
+        if (already) {
+          stats.updated++;
+        } else {
+          stats.inserted++;
+          known.add(childPath);
+        }
         emitThrottled(path);
       } else {
         stats.skipped++;

@@ -5,7 +5,7 @@ import type { Db } from "../db.ts";
 import type { DownloadManager } from "../download-manager.ts";
 import { importLocalLibrary } from "../local-importer.ts";
 import { fetchPortraits, type PortraitProgress } from "../portrait-fetcher.ts";
-import { parseFilename, type ScanProgress } from "../scanner.ts";
+import { parseFilename, parseCloudPath, type ScanProgress } from "../scanner.ts";
 import type { ImportProgress } from "../local-importer.ts";
 import { extractYear } from "../db.ts";
 import { toPinyinInitials } from "../pinyin.ts";
@@ -248,22 +248,9 @@ export async function registerAdminRoutes(
          WHERE id = ?`,
       );
 
-      // For UNIX-style paths (incl. local:////host/share/...) the parent
-      // directory is between the last two slashes.
-      function dirAndFile(p: string): { dir: string; file: string } {
-        const path = p.replace(/^local:\/\//, "");
-        const i = path.lastIndexOf("/");
-        if (i < 0) return { dir: "", file: path };
-        const file = path.slice(i + 1);
-        const before = path.slice(0, i);
-        const j = before.lastIndexOf("/");
-        const dir = j < 0 ? before : before.slice(j + 1);
-        return { dir, file };
-      }
-
       const tx = (): void => {
         for (const r of rows) {
-          const { dir, file } = dirAndFile(r.cloud_path);
+          const { dir, file } = parseCloudPath(r.cloud_path);
           const parsed = parseFilename(file, dir);
           if (parsed.title === r.title && parsed.artist === r.artist) continue;
           if (sample.length < 30) {
@@ -374,17 +361,20 @@ export async function registerAdminRoutes(
       // Group key = artist (lowercased+trimmed) + normalized title base
       // + variant tag. Different variants (live vs studio) get different
       // keys so they don't collapse.
+      // Score is consulted O(n log n) times during per-group sort; cache so
+      // we don't re-stat the same path repeatedly.
       const fs = await import("node:fs");
+      const scoreCache = new Map<number, number>();
       function score(r: Row): number {
-        if (
-          r.cached === 1 &&
-          r.local_path &&
-          fs.existsSync(r.local_path)
-        )
-          return 4;
-        if (r.cached === 1) return 3;
-        if (r.cloud_path.startsWith("local://")) return 2;
-        return 1;
+        const cached = scoreCache.get(r.id);
+        if (cached !== undefined) return cached;
+        let s: number;
+        if (r.cached === 1 && r.local_path && fs.existsSync(r.local_path)) s = 4;
+        else if (r.cached === 1) s = 3;
+        else if (r.cloud_path.startsWith("local://")) s = 2;
+        else s = 1;
+        scoreCache.set(r.id, s);
+        return s;
       }
 
       const groups = new Map<string, Row[]>();
@@ -427,9 +417,18 @@ export async function registerAdminRoutes(
         );
         const safe = toDelete.filter((id) => !inQueue.has(id));
         const stmt = db.prepare("DELETE FROM songs WHERE id = ?");
-        for (const id of safe) {
-          stmt.run(id);
-          deleted++;
+        // Wrap in a single transaction; otherwise each DELETE auto-commits
+        // and the run is roughly 10x slower at thousands of rows.
+        db.exec("BEGIN");
+        try {
+          for (const id of safe) {
+            stmt.run(id);
+            deleted++;
+          }
+          db.exec("COMMIT");
+        } catch (err) {
+          db.exec("ROLLBACK");
+          throw err;
         }
       }
 

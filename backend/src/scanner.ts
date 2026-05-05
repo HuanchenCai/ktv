@@ -93,6 +93,25 @@ export function parseFilename(
   return { title, artist: artist || "unknown", lang, genre };
 }
 
+/**
+ * Pull "<parentDir>/<filename>" out of a stored cloud_path so we can
+ * re-run parseFilename on existing rows (e.g. after a parser bugfix)
+ * without going back to the filesystem. Strips the local:// prefix on
+ * the way in so the same code handles Baidu paths and local rows.
+ */
+export function parseCloudPath(cloudPath: string): {
+  dir: string;
+  file: string;
+} {
+  const path = cloudPath.replace(/^local:\/\//, "");
+  const i = path.lastIndexOf("/");
+  if (i < 0) return { dir: "", file: path };
+  const file = path.slice(i + 1);
+  const before = path.slice(0, i);
+  const j = before.lastIndexOf("/");
+  return { dir: j < 0 ? before : before.slice(j + 1), file };
+}
+
 const VIDEO_EXTS = new Set([
   ".mkv",
   ".mp4",

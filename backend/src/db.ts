@@ -202,11 +202,7 @@ export function backfillYears(db: Db): { scanned: number } {
   if (rows.length === 0) return { scanned: 0 };
   const update = db.prepare("UPDATE songs SET year_int = ? WHERE id = ?");
   withTransaction(db, () => {
-    for (const r of rows) {
-      const m = (r.title ?? "").match(/(19|20)\d{2}/);
-      const year = m ? parseInt(m[0], 10) : 0;
-      update.run(year, r.id);
-    }
+    for (const r of rows) update.run(extractYear(r.title), r.id);
   });
   return { scanned: rows.length };
 }
