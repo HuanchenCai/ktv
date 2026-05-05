@@ -43,10 +43,13 @@ describe("parseFilename", () => {
     expect(r.artist).toBe("unknown");
   });
 
-  it("em-dash separator (B'in convention, no dir match)", () => {
-    const r = parseFilename("歌名—歌手—粤语.mkv", "dir");
-    expect(r.title).toBe("歌名");
+  it("em-dash separator, no dir match → artist-first", () => {
+    // No matching parentDir, so we use the user's dominant convention:
+    // <artist>—<title>—<lang>. Previously fallback was title-first,
+    // which flipped artist↔title for the entire bulk-dir library.
+    const r = parseFilename("歌手—歌名—粤语.mkv", "dir");
     expect(r.artist).toBe("歌手");
+    expect(r.title).toBe("歌名");
     expect(r.lang).toBe("粤语");
   });
 

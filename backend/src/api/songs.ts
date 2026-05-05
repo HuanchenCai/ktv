@@ -34,8 +34,29 @@ export async function registerSongsRoutes(
       params.push(like, like, like, like);
     }
     if (artist) {
-      where.push("artist = ?");
-      params.push(artist);
+      // Match the exact artist AND any collab string that contains it as
+      // a whole token. Files like "林俊杰_周杰伦-…-合唱.mkv" parse to
+      // artist="林俊杰_周杰伦"; without this, querying for "周杰伦"
+      // misses every duet and shows ~30 instead of ~80 songs. Using GLOB
+      // (literal "_") instead of LIKE (where "_" is a wildcard).
+      where.push(
+        `(artist = ?
+          OR artist GLOB ?
+          OR artist GLOB ?
+          OR artist GLOB ?
+          OR artist GLOB ?
+          OR artist GLOB ?
+          OR artist GLOB ?)`,
+      );
+      params.push(
+        artist,
+        `${artist}_*`,
+        `*_${artist}`,
+        `*_${artist}_*`,
+        `${artist} *`,
+        `* ${artist}`,
+        `* ${artist} *`,
+      );
     }
     if (where.length) sql += " WHERE " + where.join(" AND ");
     let orderBy: string;

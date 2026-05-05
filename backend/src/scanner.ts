@@ -28,8 +28,11 @@ export function parseFilename(
 } {
   const noExt = filename.replace(/\.[^.]+$/, "");
   const stripTags = (s: string) => s.replace(/\[[^\]]*\]/g, "").trim();
+  // Split only on hyphens (ASCII and the wide variants). Underscores are
+  // used WITHIN the artist segment to mark collaborations
+  // ("林俊杰_周杰伦-可惜没如果-国语-合唱"), so we MUST NOT split on _.
   const parts = noExt
-    .split(/[-_—]/)
+    .split(/[-—–]/)
     .map((s) => stripTags(s))
     .filter(Boolean);
 
@@ -76,10 +79,13 @@ export function parseFilename(
     lang = parts[artistIdx + 1] ?? null;
     genre = parts[artistIdx + 2] ?? null;
   } else {
-    // No match: fall back to B'in convention. parts[1] is the artist;
-    // if absent, the directory name wins.
-    title = parts[0];
-    artist = parts[1] ?? parentDir ?? "unknown";
+    // No dir match — pick artist-first as the default. Empirically the
+    // user's library is overwhelmingly "<artist>-<title>-<lang>-<genre>"
+    // (e.g. "周杰伦-纽约地铁-国语-流行.mkv"), and the previous fallback
+    // (title-first, "B'in convention") was silently flipping artist and
+    // title for every file in undated bulk dirs.
+    artist = parts[0];
+    title = parts[1] ?? parts[0];
     lang = parts[2] ?? null;
     genre = parts[3] ?? null;
   }
