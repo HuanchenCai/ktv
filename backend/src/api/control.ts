@@ -69,15 +69,18 @@ export async function registerControlRoutes(
   );
 
   fastify.post<{
-    Body: { low?: number; mid?: number; high?: number; off?: boolean };
+    Body:
+      | { off: true }
+      | { low: number; mid: number; high: number; off?: false };
   }>("/api/control/eq", async (req) => {
-    if (req.body?.off) {
+    const body = req.body;
+    if (body && "off" in body && body.off) {
       await mpv.setEq(null);
       return { ok: true, off: true };
     }
-    const low = Number(req.body?.low ?? 0);
-    const mid = Number(req.body?.mid ?? 0);
-    const high = Number(req.body?.high ?? 0);
+    const low = Number(body && "low" in body ? body.low : 0);
+    const mid = Number(body && "mid" in body ? body.mid : 0);
+    const high = Number(body && "high" in body ? body.high : 0);
     await mpv.setEq({ low, mid, high });
     return { ok: true, low, mid, high };
   });

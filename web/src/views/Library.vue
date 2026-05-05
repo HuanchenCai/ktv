@@ -139,6 +139,19 @@ async function refreshAll() {
   await Promise.all([loadStats(), loadSongs(), loadBaiduScanState()]);
 }
 
+// Multiple WS events (scan / import / baidu-scan all firing phase=done
+// in close succession) used to trigger refreshAll in a tight burst,
+// each issuing 3 parallel queries — and stats hits the worst SQL on
+// the heaviest table. Debounce so a flurry collapses to one call.
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+function refreshAllDebounced() {
+  if (refreshTimer) return;
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    void refreshAll();
+  }, 300);
+}
+
 let unsub: (() => void) | null = null;
 onMounted(() => {
   refreshAll();
@@ -146,17 +159,17 @@ onMounted(() => {
     if (m.type === "scan.progress") {
       scanProgress.value = m.payload as ScanProgress;
       scanning.value = scanProgress.value.phase !== "done";
-      if (scanProgress.value.phase === "done") refreshAll();
+      if (scanProgress.value.phase === "done") refreshAllDebounced();
     } else if (m.type === "import.progress") {
       importProgress.value = m.payload as ImportProgress;
       importing.value = importProgress.value.phase !== "done";
-      if (importProgress.value.phase === "done") refreshAll();
+      if (importProgress.value.phase === "done") refreshAllDebounced();
     } else if (m.type === "baidu-scan.progress") {
       baiduProgress.value = m.payload as BaiduScanProgress;
       baiduScanning.value =
         baiduProgress.value.phase !== "done" &&
         baiduProgress.value.phase !== "failed";
-      if (baiduProgress.value.phase === "done") refreshAll();
+      if (baiduProgress.value.phase === "done") refreshAllDebounced();
     }
   });
 });

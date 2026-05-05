@@ -30,18 +30,29 @@ const doToggle = () => flash("切声道", () => api.toggleVocal());
 const doReopen = () => flash("重开视频", () => api.reopen());
 const setChan = (c: "L" | "R" | "both") =>
   flash(`声道 ${c}`, () => api.setChannel(c));
-// Throttle so a drag doesn't spam the backend with one IPC per pixel.
+// Trailing-edge throttle: send at most one IPC per ~80 ms, but also
+// guarantee the LAST value the user picked actually goes through —
+// a fast drag that ends within the window otherwise drops its final
+// position.
 let volTimer: ReturnType<typeof setTimeout> | null = null;
+let volPending = false;
 function onVolume() {
+  volPending = true;
   if (volTimer) return;
-  volTimer = setTimeout(async () => {
-    volTimer = null;
+  const flush = async () => {
+    volPending = false;
     try {
       await api.setVolume(volume.value);
     } catch {
       /* ignore */
     }
-  }, 80);
+    if (volPending) {
+      volTimer = setTimeout(flush, 80);
+    } else {
+      volTimer = null;
+    }
+  };
+  volTimer = setTimeout(flush, 80);
 }
 
 let eqTimer: ReturnType<typeof setTimeout> | null = null;

@@ -447,9 +447,18 @@ export class MpvController extends EventEmitter {
     }
     if (!bands) return;
     const clamp = (v: number) => Math.max(-12, Math.min(12, v));
-    const filter = `@ktv_eq:lavfi=[equalizer=f=100:t=q:w=1:g=${clamp(bands.low)},equalizer=f=1000:t=q:w=1:g=${clamp(bands.mid)},equalizer=f=8000:t=q:w=1:g=${clamp(bands.high)}]`;
+    const eqBands: Array<[number, number]> = [
+      [100, clamp(bands.low)],
+      [1000, clamp(bands.mid)],
+      [8000, clamp(bands.high)],
+    ];
+    const chain = eqBands
+      .map(([f, g]) => `equalizer=f=${f}:t=q:w=1:g=${g}`)
+      .join(",");
     try {
-      await Promise.resolve(this.mpv.command("af", ["add", filter]));
+      await Promise.resolve(
+        this.mpv.command("af", ["add", `@ktv_eq:lavfi=[${chain}]`]),
+      );
     } catch (err) {
       console.warn("[mpv] setEq failed:", err);
     }
