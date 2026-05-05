@@ -49,10 +49,10 @@ export async function registerSongsRoutes(
         orderBy = "LENGTH(title) ASC, title ASC";
         break;
       case "year":
-        // Year extraction in SQLite is fragile (no regexp). Return rows in
-        // pinyin order; the frontend re-sorts client-side via a regex on
-        // the title text.
-        orderBy = "pinyin ASC, title ASC";
+        // year_int is populated at INSERT time and backfilled at startup
+        // (see db.ts extractYear / backfillYears). 0 = "no year in title"
+        // — those sink to the bottom in DESC order.
+        orderBy = "year_int DESC, title ASC";
         break;
       case "popular":
       default:

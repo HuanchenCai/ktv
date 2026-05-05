@@ -1,7 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { resolve, basename, extname, dirname } from "node:path";
-import type { Db } from "./db.ts";
+import { extractYear, type Db } from "./db.ts";
 import { toPinyinInitials } from "./pinyin.ts";
 import { parseFilename } from "./scanner.ts";
 
@@ -56,14 +56,15 @@ export async function importLocalLibrary(
   const insert = db.prepare(
     `INSERT INTO songs
      (title, artist, lang, genre, pinyin, artist_pinyin, cloud_path, size_bytes,
-      cached, local_path, vocal_channel)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'L')
+      cached, local_path, vocal_channel, year_int)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'L', ?)
      ON CONFLICT(cloud_path) DO UPDATE SET
        cached=1,
        local_path=excluded.local_path,
        size_bytes=excluded.size_bytes,
        artist=excluded.artist,
-       artist_pinyin=excluded.artist_pinyin`,
+       artist_pinyin=excluded.artist_pinyin,
+       year_int=excluded.year_int`,
   );
 
   const tick = (phase: ImportProgress["phase"], dir?: string) => {
@@ -115,6 +116,7 @@ export async function importLocalLibrary(
           cloudPath,
           st.size,
           full,
+          extractYear(title),
         );
         known.add(cloudPath);
         added++;

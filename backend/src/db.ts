@@ -129,6 +129,15 @@ const MIGRATIONS: Array<{ name: string; sql: string }> = [
     name: "add artist_pinyin",
     sql: "ALTER TABLE songs ADD COLUMN artist_pinyin TEXT NOT NULL DEFAULT ''",
   },
+  {
+    name: "add year_int",
+    // Extracted year (1900..2099) from the title, cached for cheap
+    // server-side sort. Sentinel:
+    //   -1 = not yet parsed (backfill on next boot)
+    //    0 = parsed; no year present in title
+    //   >0 = real year
+    sql: "ALTER TABLE songs ADD COLUMN year_int INTEGER NOT NULL DEFAULT -1",
+  },
 ];
 
 const INDEXES = `
@@ -136,6 +145,7 @@ CREATE INDEX IF NOT EXISTS idx_songs_pinyin ON songs(pinyin);
 CREATE INDEX IF NOT EXISTS idx_songs_artist_pinyin ON songs(artist_pinyin);
 CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist);
 CREATE INDEX IF NOT EXISTS idx_songs_cached ON songs(cached);
+CREATE INDEX IF NOT EXISTS idx_songs_year ON songs(year_int);
 CREATE INDEX IF NOT EXISTS idx_queue_position ON queue(position);
 CREATE INDEX IF NOT EXISTS idx_dl_status ON download_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_dl_song ON download_tasks(song_id);
@@ -156,6 +166,40 @@ function applyMigrations(db: Db) {
       }
     }
   }
+}
+
+/**
+ * Pull the first 4-digit substring in 1900..2099 from a title. Used by
+ * the importers / scanner to populate songs.year_int at INSERT time.
+ * Returns 0 if none found.
+ */
+export function extractYear(title: string | null): number {
+  if (!title) return 0;
+  const m = title.match(/(19|20)\d{2}/);
+  return m ? parseInt(m[0], 10) : 0;
+}
+
+/**
+ * Walk titles whose year_int sentinel is still -1, extract any
+ * 1900..2099 substring and write it back. After this runs, year_int is
+ * either a real year (>0) or 0 ("parsed; none found"). Newly inserted
+ * songs from the importers fill this in directly, so this is mostly a
+ * one-shot for libraries that pre-date the column.
+ */
+export function backfillYears(db: Db): { scanned: number } {
+  const rows = db
+    .prepare("SELECT id, title FROM songs WHERE year_int = -1")
+    .all() as Array<{ id: number; title: string }>;
+  if (rows.length === 0) return { scanned: 0 };
+  const update = db.prepare("UPDATE songs SET year_int = ? WHERE id = ?");
+  withTransaction(db, () => {
+    for (const r of rows) {
+      const m = (r.title ?? "").match(/(19|20)\d{2}/);
+      const year = m ? parseInt(m[0], 10) : 0;
+      update.run(year, r.id);
+    }
+  });
+  return { scanned: rows.length };
 }
 
 export function openDb(filePath: string): Db {

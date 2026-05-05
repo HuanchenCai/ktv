@@ -33,6 +33,11 @@ const selectedArtist = ref<string | null>(null);
 const portraitByArtist = ref<Map<string, string>>(new Map());
 type SortMode = "popular" | "pinyin" | "length" | "year";
 const sort = ref<SortMode>("popular");
+// Stable for the lifetime of the page — used to gate desktop-only UI hints
+// (e.g. "go to admin" links). The route guard already prevents phones
+// from actually navigating to /admin, this just hides the dangling link.
+const isDesktop =
+  typeof window !== "undefined" && window.innerWidth >= 1024;
 
 async function loadPortraits() {
   try {
@@ -77,14 +82,6 @@ watch(
   },
 );
 
-function extractYear(title: string): number {
-  // Pull the first 4-digit substring in 1900-2099 from the title; songs
-  // without an explicit year sink to the bottom (return 0 → asc) or top
-  // (handled per direction outside).
-  const m = title.match(/(19|20)\d{2}/);
-  return m ? parseInt(m[0], 10) : 0;
-}
-
 async function run(query: string) {
   loading.value = true;
   error.value = "";
@@ -106,13 +103,7 @@ async function run(query: string) {
       selectedArtist.value ?? undefined,
       sort.value,
     );
-    let list = res.songs;
-    // Year mode: backend returns pinyin order; we re-sort here using the
-    // title regex (descending — newest songs first).
-    if (sort.value === "year") {
-      list = [...list].sort((a, b) => extractYear(b.title) - extractYear(a.title));
-    }
-    songs.value = list;
+    songs.value = res.songs;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
@@ -241,11 +232,12 @@ async function add(song: Song, top: boolean) {
     >
       <div class="text-3xl">📀</div>
       <div>曲库还是空的</div>
-      <div class="text-xs">
+      <div v-if="isDesktop" class="text-xs">
         去
         <RouterLink to="/admin" class="text-accent">管理页</RouterLink>
         扫百度盘或导入本地 MKV
       </div>
+      <div v-else class="text-xs">联系主人去电脑端导入歌曲</div>
     </div>
   </div>
 </template>

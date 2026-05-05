@@ -7,7 +7,7 @@ import { networkInterfaces as netIfaces } from "node:os";
 import QRCode from "qrcode";
 
 import { loadConfig, projectRoot } from "./config.ts";
-import { openDb } from "./db.ts";
+import { openDb, backfillYears } from "./db.ts";
 import { OpenListClient } from "./openlist-client.ts";
 import { spawnOpenList, waitForOpenList } from "./openlist-spawner.ts";
 import type { OpenListProcess } from "./openlist-spawner.ts";
@@ -45,6 +45,14 @@ async function main() {
       upd.run(toPinyinInitials(row.artist), row.id);
     }
     console.log(`[main] backfilled artist_pinyin for ${stale.length} songs`);
+  }
+
+  // Year extraction for songs that pre-date the year_int column. Sentinel
+  // rows (-1) get parsed once; subsequent boots see only newly-inserted
+  // rows so this stays cheap.
+  const ybf = backfillYears(db);
+  if (ybf.scanned > 0) {
+    console.log(`[main] backfilled year_int for ${ybf.scanned} songs`);
   }
 
   // Drop locally-imported songs whose cloud_path doesn't match the current

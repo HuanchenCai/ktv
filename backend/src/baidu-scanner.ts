@@ -1,6 +1,6 @@
 import { toPinyinInitials } from "./pinyin.ts";
 import { parseFilename } from "./scanner.ts";
-import type { Db } from "./db.ts";
+import { extractYear, type Db } from "./db.ts";
 
 /**
  * Walk a Baidu Netdisk subtree via the cookie-authenticated /api/list
@@ -120,8 +120,8 @@ export async function scanBaidu(
 
   const insert = db.prepare(
     `INSERT INTO songs
-       (title, artist, lang, genre, pinyin, artist_pinyin, cloud_path, size_bytes, vocal_channel)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (title, artist, lang, genre, pinyin, artist_pinyin, cloud_path, size_bytes, vocal_channel, year_int)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(cloud_path) DO UPDATE SET
        title=excluded.title,
        artist=excluded.artist,
@@ -129,7 +129,8 @@ export async function scanBaidu(
        genre=excluded.genre,
        pinyin=excluded.pinyin,
        artist_pinyin=excluded.artist_pinyin,
-       size_bytes=excluded.size_bytes`,
+       size_bytes=excluded.size_bytes,
+       year_int=excluded.year_int`,
   );
   const exists = db.prepare("SELECT id FROM songs WHERE cloud_path = ?");
 
@@ -197,6 +198,7 @@ export async function scanBaidu(
           childPath,
           item.size,
           "L",
+          extractYear(title),
         );
         if (already) stats.updated++;
         else stats.inserted++;

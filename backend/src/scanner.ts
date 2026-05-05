@@ -1,5 +1,5 @@
 import type { OpenListClient, FsListItem } from "./openlist-client.ts";
-import type { Db } from "./db.ts";
+import { extractYear, type Db } from "./db.ts";
 import { toPinyinInitials } from "./pinyin.ts";
 
 /**
@@ -143,8 +143,8 @@ export class Scanner {
 
     const insert = this.db.prepare(
       `INSERT INTO songs
-       (title, artist, lang, genre, pinyin, artist_pinyin, cloud_path, size_bytes, vocal_channel)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (title, artist, lang, genre, pinyin, artist_pinyin, cloud_path, size_bytes, vocal_channel, year_int)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(cloud_path) DO UPDATE SET
          title=excluded.title,
          artist=excluded.artist,
@@ -152,7 +152,8 @@ export class Scanner {
          genre=excluded.genre,
          pinyin=excluded.pinyin,
          artist_pinyin=excluded.artist_pinyin,
-         size_bytes=excluded.size_bytes`,
+         size_bytes=excluded.size_bytes,
+         year_int=excluded.year_int`,
     );
     const exists = this.db.prepare(
       "SELECT id FROM songs WHERE cloud_path = ?",
@@ -204,6 +205,7 @@ export class Scanner {
             childPath,
             item.size,
             "L",
+            extractYear(title),
           );
           if (already) updated++;
           else inserted++;
