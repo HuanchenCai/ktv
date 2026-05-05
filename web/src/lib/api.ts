@@ -309,6 +309,21 @@ export const api = {
       method: "POST",
     });
   },
+  reparseFilenames(apply: boolean) {
+    return request<{
+      dry_run: boolean;
+      scanned: number;
+      changed: number;
+      sample: Array<{
+        id: number;
+        before: { title: string; artist: string };
+        after: { title: string; artist: string };
+      }>;
+    }>("/api/admin/reparse-filenames", {
+      method: "POST",
+      body: JSON.stringify({ apply }),
+    });
+  },
   dedupe(apply: boolean) {
     return request<{
       dry_run: boolean;

@@ -5,8 +5,10 @@ import type { Db } from "../db.ts";
 import type { DownloadManager } from "../download-manager.ts";
 import { importLocalLibrary } from "../local-importer.ts";
 import { fetchPortraits, type PortraitProgress } from "../portrait-fetcher.ts";
-import type { ScanProgress } from "../scanner.ts";
+import { parseFilename, type ScanProgress } from "../scanner.ts";
 import type { ImportProgress } from "../local-importer.ts";
+import { extractYear } from "../db.ts";
+import { toPinyinInitials } from "../pinyin.ts";
 import {
   scanBaidu,
   type BaiduScanProgress,
@@ -193,6 +195,107 @@ export async function registerAdminRoutes(
     if (baiduAbort) baiduAbort.abort();
     return { aborted: true };
   });
+
+  /**
+   * Re-run parseFilename() over every song row's cloud_path, rewriting
+   * title / artist / lang / genre / pinyin / artist_pinyin / year_int
+   * in place. Use after a parser bugfix so the existing 25k+ rows pick
+   * up the corrected logic without re-scanning the filesystem.
+   *
+   * Defaults to dry_run=true. Returns up to 30 sample changes for review.
+   */
+  fastify.post<{ Body: { apply?: boolean } }>(
+    "/api/admin/reparse-filenames",
+    async (req) => {
+      if (!db) return { error: "no db" };
+      const apply = req.body?.apply === true;
+
+      type Row = {
+        id: number;
+        title: string;
+        artist: string;
+        cloud_path: string;
+      };
+      const rows = db
+        .prepare("SELECT id, title, artist, cloud_path FROM songs")
+        .all() as Row[];
+
+      let changed = 0;
+      const sample: Array<{
+        id: number;
+        before: { title: string; artist: string };
+        after: { title: string; artist: string };
+      }> = [];
+
+      const update = db.prepare(
+        `UPDATE songs SET
+           title = ?, artist = ?, lang = ?, genre = ?,
+           pinyin = ?, artist_pinyin = ?, year_int = ?
+         WHERE id = ?`,
+      );
+
+      // For UNIX-style paths (incl. local:////host/share/...) the parent
+      // directory is between the last two slashes.
+      function dirAndFile(p: string): { dir: string; file: string } {
+        const path = p.replace(/^local:\/\//, "");
+        const i = path.lastIndexOf("/");
+        if (i < 0) return { dir: "", file: path };
+        const file = path.slice(i + 1);
+        const before = path.slice(0, i);
+        const j = before.lastIndexOf("/");
+        const dir = j < 0 ? before : before.slice(j + 1);
+        return { dir, file };
+      }
+
+      const tx = (): void => {
+        for (const r of rows) {
+          const { dir, file } = dirAndFile(r.cloud_path);
+          const parsed = parseFilename(file, dir);
+          if (parsed.title === r.title && parsed.artist === r.artist) continue;
+          if (sample.length < 30) {
+            sample.push({
+              id: r.id,
+              before: { title: r.title, artist: r.artist },
+              after: { title: parsed.title, artist: parsed.artist },
+            });
+          }
+          changed++;
+          if (apply) {
+            update.run(
+              parsed.title,
+              parsed.artist,
+              parsed.lang,
+              parsed.genre,
+              toPinyinInitials(parsed.title),
+              toPinyinInitials(parsed.artist),
+              extractYear(parsed.title),
+              r.id,
+            );
+          }
+        }
+      };
+
+      if (apply) {
+        db.exec("BEGIN");
+        try {
+          tx();
+          db.exec("COMMIT");
+        } catch (err) {
+          db.exec("ROLLBACK");
+          throw err;
+        }
+      } else {
+        tx();
+      }
+
+      return {
+        dry_run: !apply,
+        scanned: rows.length,
+        changed,
+        sample,
+      };
+    },
+  );
 
   /**
    * Dedupe the songs library by (artist, normalized title).

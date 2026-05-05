@@ -87,6 +87,20 @@ type DedupeResult = {
 const dedupePreview = ref<DedupeResult | null>(null);
 const dedupeBusy = ref(false);
 
+// Re-parse filenames (after parser bugfix)
+type ReparseResult = {
+  dry_run: boolean;
+  scanned: number;
+  changed: number;
+  sample: Array<{
+    id: number;
+    before: { title: string; artist: string };
+    after: { title: string; artist: string };
+  }>;
+};
+const reparsePreview = ref<ReparseResult | null>(null);
+const reparseBusy = ref(false);
+
 async function loadStats() {
   try {
     stats.value = await fetch("/api/library/stats").then((r) => r.json());
@@ -271,6 +285,36 @@ const selectedNotCachedCount = computed(() => {
   return n;
 });
 
+async function reparsePreviewRun() {
+  reparseBusy.value = true;
+  error.value = "";
+  try {
+    reparsePreview.value = await api.reparseFilenames(false);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    reparseBusy.value = false;
+  }
+}
+async function reparseApply() {
+  if (!reparsePreview.value) return;
+  if (
+    !confirm(
+      `确认按新解析规则重写 ${reparsePreview.value.changed} 行？此操作覆盖 title/artist/拼音。`,
+    )
+  )
+    return;
+  reparseBusy.value = true;
+  try {
+    reparsePreview.value = await api.reparseFilenames(true);
+    await refreshAll();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    reparseBusy.value = false;
+  }
+}
+
 async function dedupePreviewRun() {
   dedupeBusy.value = true;
   error.value = "";
@@ -412,6 +456,60 @@ async function downloadSelected() {
         <div>{{ scanProgress.phase === "listing" ? "枚举目录" : "入库" }}：见 {{ scanProgress.files_seen }} 文件，新增 {{ scanProgress.inserted }}，更新 {{ scanProgress.updated }}</div>
         <div v-if="scanProgress.current_dir" class="truncate">
           {{ scanProgress.current_dir }}
+        </div>
+      </div>
+    </div>
+
+    <!-- RE-PARSE FILENAMES -->
+    <div class="card space-y-3">
+      <div class="flex items-baseline justify-between">
+        <h3 class="h-section">重跑文件名解析</h3>
+        <span class="text-xs text-muted">
+          parser 修过 bug 后用这个重写已入库行的 title/artist，不用重扫硬盘
+        </span>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button
+          class="btn-ghost text-sm"
+          :disabled="reparseBusy"
+          @click="reparsePreviewRun"
+        >
+          {{ reparseBusy ? "扫描中..." : "🔍 预览改动" }}
+        </button>
+        <button
+          v-if="reparsePreview && reparsePreview.changed > 0 && reparsePreview.dry_run"
+          class="btn-primary text-sm"
+          :disabled="reparseBusy"
+          @click="reparseApply"
+        >
+          ✏ 应用 {{ reparsePreview.changed }} 行改动
+        </button>
+      </div>
+      <div v-if="reparsePreview" class="text-xs text-muted space-y-2">
+        <div>
+          扫描: {{ reparsePreview.scanned }} · 待改动:
+          {{ reparsePreview.changed }}
+          <span v-if="!reparsePreview.dry_run" class="text-emerald-400">
+            · 已应用
+          </span>
+          <span v-else class="text-amber-400">· 仅预览</span>
+        </div>
+        <div
+          v-if="reparsePreview.sample.length"
+          class="space-y-1 max-h-60 overflow-y-auto"
+        >
+          <div
+            v-for="r in reparsePreview.sample"
+            :key="r.id"
+            class="border-l-2 border-amber-500/40 pl-2"
+          >
+            <div class="text-rose-300/70 truncate">
+              旧: {{ r.before.artist }} - {{ r.before.title }}
+            </div>
+            <div class="text-emerald-300 truncate">
+              新: {{ r.after.artist }} - {{ r.after.title }}
+            </div>
+          </div>
         </div>
       </div>
     </div>
