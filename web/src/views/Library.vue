@@ -206,20 +206,6 @@ function fmtDate(ts: number | null): string {
   return d.toISOString().slice(0, 10);
 }
 
-async function startScan() {
-  scanning.value = true;
-  scanProgress.value = null;
-  try {
-    const res = await fetch("/api/admin/scan", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    }).then((r) => r.json());
-    if (res.error) error.value = res.error;
-  } finally {
-    // WS will mark scanning false when phase=done
-  }
-}
 async function startImport() {
   importing.value = true;
   importProgress.value = null;
@@ -421,7 +407,10 @@ async function downloadSelected() {
       </div>
     </div>
 
-    <!-- ACTIONS -->
+    <!-- ACTIONS — local scan only. Baidu scan is in its own card below
+         (the BDUSS-direct path). The old OpenList-based Baidu scan
+         button was removed: it duplicates the same feature with a
+         flakier code path and confused the UI. -->
     <div class="card space-y-3">
       <h3 class="h-section">扫描入库</h3>
       <div class="flex flex-wrap gap-2">
@@ -432,13 +421,6 @@ async function downloadSelected() {
         >
           {{ importing ? "导入中..." : "📁 扫本地目录" }}
         </button>
-        <button
-          class="btn-ghost text-sm"
-          :disabled="scanning || importing || baiduScanning"
-          @click="startScan"
-        >
-          {{ scanning ? "OpenList 扫描中..." : "☁ 扫百度盘 (OpenList)" }}
-        </button>
       </div>
       <div
         v-if="importProgress && importing"
@@ -447,15 +429,6 @@ async function downloadSelected() {
         <div>{{ importProgress.phase === "listing" ? "枚举目录" : "入库" }}：扫 {{ importProgress.scanned }}，新增 {{ importProgress.added }}，跳过 {{ importProgress.skipped }}</div>
         <div v-if="importProgress.current_dir" class="truncate">
           {{ importProgress.current_dir }}
-        </div>
-      </div>
-      <div
-        v-if="scanProgress && scanning"
-        class="text-xs text-muted space-y-1.5"
-      >
-        <div>{{ scanProgress.phase === "listing" ? "枚举目录" : "入库" }}：见 {{ scanProgress.files_seen }} 文件，新增 {{ scanProgress.inserted }}，更新 {{ scanProgress.updated }}</div>
-        <div v-if="scanProgress.current_dir" class="truncate">
-          {{ scanProgress.current_dir }}
         </div>
       </div>
     </div>
