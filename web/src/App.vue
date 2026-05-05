@@ -31,19 +31,43 @@ const wsDotClass = computed(() => ({
         isTv ? 'px-8 py-4 bg-bg/40' : 'px-4 py-3 sticky top-0 bg-bg/80 z-30',
       ]"
     >
-      <div class="flex items-center gap-3">
+      <RouterLink
+        to="/"
+        class="flex items-center gap-3 group"
+        title="回主页"
+      >
+        <!-- A spinning vinyl + glowing tonearm. Pure CSS so it's crisp at
+             any size and free from external assets. The needle picks up
+             the accent ring on hover. -->
         <div
           :class="[
-            'rounded-xl bg-accent shadow-glow grid place-items-center',
-            isTv ? 'w-9 h-9 text-lg' : 'w-8 h-8 text-sm rounded-lg',
+            'relative shrink-0 grid place-items-center',
+            isTv ? 'w-10 h-10' : 'w-9 h-9',
           ]"
         >
-          🎤
+          <div
+            class="absolute inset-0 rounded-full bg-gradient-to-br from-accent/80 to-fuchsia-500 shadow-glow group-hover:shadow-[0_0_22px_rgba(236,72,153,0.55)] transition-shadow"
+          ></div>
+          <div
+            class="absolute inset-[14%] rounded-full bg-bg/80 ring-1 ring-white/10 ktv-spin"
+            style="
+              background-image:
+                repeating-radial-gradient(
+                  rgba(255,255,255,0.05) 0,
+                  rgba(255,255,255,0.05) 1px,
+                  transparent 1px,
+                  transparent 3px
+                );
+            "
+          ></div>
+          <div
+            class="absolute inset-[44%] rounded-full bg-amber-300 shadow-[0_0_6px_rgba(251,191,36,0.7)]"
+          ></div>
         </div>
         <div>
           <div
             :class="[
-              'font-bold tracking-wide leading-none',
+              'font-bold tracking-wider leading-none bg-clip-text text-transparent bg-gradient-to-r from-fuchsia-300 via-accent to-amber-300',
               isTv ? 'text-xl' : '',
             ]"
           >
@@ -68,7 +92,7 @@ const wsDotClass = computed(() => ({
             </span>
           </div>
         </div>
-      </div>
+      </RouterLink>
       <!-- Phone uses the bottom tab bar (搜歌/已点/播放), and the desktop-
            oriented routes (曲库/歌手/管理) don't fit the phone layout, so
            the top nav is desktop-only. -->
@@ -150,5 +174,12 @@ const wsDotClass = computed(() => ({
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+@keyframes ktv-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.ktv-spin {
+  animation: ktv-spin 6s linear infinite;
 }
 </style>
