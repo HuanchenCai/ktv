@@ -161,9 +161,10 @@ export class MpvController extends EventEmitter {
     const mpvArgs: string[] = [
       "--keep-open=yes",
       "--idle=yes",
-      // No --force-window: mpv stays headless when nothing is queued. The
-      // browser /tv view (AirPlayed/projected to the TV) is the idle screen.
-      // mpv only pops a window when a song actually loads.
+      // force-window=yes keeps a black mpv window even when nothing is
+      // playing — without it, the gap between songs (or before the first
+      // song) shows the desktop, which is jarring in a karaoke setting.
+      "--force-window=yes",
       "--ontop=yes",
       "--title=KTV",
       "--cursor-autohide=1000",
@@ -171,16 +172,13 @@ export class MpvController extends EventEmitter {
       `--input-conf=${this.inputConfPath}`,
     ];
     if (this.fullscreen) {
-      // Use BORDERLESS WINDOWED that fills the screen, not exclusive
-      // fullscreen. Going exclusive fullscreen on Windows can change the
-      // display refresh rate / mode, which kicks Miracast / Smart View /
-      // AirPlay mirrors off the TV. Borderless windowed looks identical to
-      // the user but is just a regular maximized window underneath.
-      mpvArgs.push(
-        "--no-border",
-        "--geometry=100%x100%+0+0",
-        "--keep-open=yes",
-      );
+      // True fullscreen via mpv's --fs flag — on Windows this is a
+      // borderless window stretched to the work-area BY DEFAULT (mpv
+      // doesn't take exclusive mode unless --fs-screen-name targets one),
+      // so it shouldn't trip Miracast/AirPlay refresh-rate switching.
+      // The taskbar IS hidden in this mode (which is what the user
+      // wants — they shouldn't have to double-click each song).
+      mpvArgs.push("--fs=yes");
     }
 
     // Decode the QR PNG into raw BGRA bytes upfront. mpv's `overlay-add` IPC
@@ -399,7 +397,15 @@ export class MpvController extends EventEmitter {
   async setVolume(vol: number): Promise<void> {
     if (!this.mpv) return;
     const clamped = Math.max(0, Math.min(130, vol));
-    this.mpv.volume(clamped);
+    // node-mpv 1.x's `volume()` helper has been flaky: it returns void
+    // without an awaitable, and silently no-ops when the player is in
+    // idle state (between songs). The IPC `set_property volume` form
+    // works regardless of playback state, so use that.
+    try {
+      await Promise.resolve(this.mpv.setProperty("volume", clamped));
+    } catch (err) {
+      console.warn("[mpv] setVolume failed:", err);
+    }
   }
 
   async replay(): Promise<void> {
@@ -409,6 +415,35 @@ export class MpvController extends EventEmitter {
 
   async stop(): Promise<void> {
     this.mpv?.stop();
+  }
+
+  /**
+   * Apply a 3-band EQ on top of the current audio chain. Uses three
+   * `equalizer` lavfi nodes labelled `@ktv_eq` so we can replace them in
+   * place. Gains are in dB, range -12..+12. Pass null to remove the EQ.
+   *
+   * Frequencies picked for vocal-friendly tuning:
+   *   low  = 100 Hz  (warmth / boom)
+   *   mid  = 1 kHz   (presence / nasal)
+   *   high = 8 kHz   (air / sibilance)
+   */
+  async setEq(
+    bands: { low: number; mid: number; high: number } | null,
+  ): Promise<void> {
+    if (!this.mpv) return;
+    try {
+      await Promise.resolve(this.mpv.command("af", ["remove", "@ktv_eq"]));
+    } catch {
+      /* not present yet */
+    }
+    if (!bands) return;
+    const clamp = (v: number) => Math.max(-12, Math.min(12, v));
+    const filter = `@ktv_eq:lavfi=[equalizer=f=100:t=q:w=1:g=${clamp(bands.low)},equalizer=f=1000:t=q:w=1:g=${clamp(bands.mid)},equalizer=f=8000:t=q:w=1:g=${clamp(bands.high)}]`;
+    try {
+      await Promise.resolve(this.mpv.command("af", ["add", filter]));
+    } catch (err) {
+      console.warn("[mpv] setEq failed:", err);
+    }
   }
 
   async getState(): Promise<Partial<MpvState>> {

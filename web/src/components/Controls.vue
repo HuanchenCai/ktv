@@ -5,6 +5,13 @@ import { api } from "../lib/api";
 const volume = ref(80);
 const lastAction = ref("");
 
+// 3-band EQ: -12..+12 dB. Default flat (0/0/0). Pushed to mpv lazily —
+// nothing happens until the user moves a slider.
+const eqOpen = ref(false);
+const eqLow = ref(0);
+const eqMid = ref(0);
+const eqHigh = ref(0);
+
 async function flash(label: string, fn: () => Promise<unknown>) {
   lastAction.value = label;
   setTimeout(() => {
@@ -23,8 +30,45 @@ const doToggle = () => flash("切声道", () => api.toggleVocal());
 const doReopen = () => flash("重开视频", () => api.reopen());
 const setChan = (c: "L" | "R" | "both") =>
   flash(`声道 ${c}`, () => api.setChannel(c));
-async function onVolume() {
-  await api.setVolume(volume.value);
+// Throttle so a drag doesn't spam the backend with one IPC per pixel.
+let volTimer: ReturnType<typeof setTimeout> | null = null;
+function onVolume() {
+  if (volTimer) return;
+  volTimer = setTimeout(async () => {
+    volTimer = null;
+    try {
+      await api.setVolume(volume.value);
+    } catch {
+      /* ignore */
+    }
+  }, 80);
+}
+
+let eqTimer: ReturnType<typeof setTimeout> | null = null;
+function pushEq() {
+  if (eqTimer) clearTimeout(eqTimer);
+  eqTimer = setTimeout(async () => {
+    try {
+      await api.setEq({
+        low: eqLow.value,
+        mid: eqMid.value,
+        high: eqHigh.value,
+      });
+    } catch {
+      /* ignore */
+    }
+  }, 120);
+}
+
+async function resetEq() {
+  eqLow.value = 0;
+  eqMid.value = 0;
+  eqHigh.value = 0;
+  try {
+    await api.setEq({ off: true });
+  } catch {
+    /* ignore */
+  }
 }
 </script>
 
@@ -91,8 +135,57 @@ async function onVolume() {
         min="0"
         max="130"
         class="w-full"
-        @change="onVolume"
+        @input="onVolume"
       />
+    </div>
+
+    <!-- 3-band EQ. Collapsed by default to keep the panel compact. -->
+    <div class="pt-1 border-t border-border/40 space-y-2">
+      <button
+        class="w-full flex items-center justify-between text-[11px] text-muted hover:text-white transition-colors"
+        @click="eqOpen = !eqOpen"
+      >
+        <span>🎚 音效 (低/中/高频)</span>
+        <span class="tabular-nums">
+          {{ eqLow }} / {{ eqMid }} / {{ eqHigh }} dB
+          <span class="ml-1">{{ eqOpen ? "▾" : "▸" }}</span>
+        </span>
+      </button>
+      <div v-if="eqOpen" class="space-y-1.5">
+        <div class="grid grid-cols-[1.5rem_1fr_2.25rem] items-center gap-2">
+          <span class="text-[11px] text-muted">低</span>
+          <input
+            v-model.number="eqLow"
+            type="range" min="-12" max="12" step="1"
+            class="w-full" @input="pushEq"
+          />
+          <span class="text-[11px] tabular-nums text-right">{{ eqLow }}</span>
+        </div>
+        <div class="grid grid-cols-[1.5rem_1fr_2.25rem] items-center gap-2">
+          <span class="text-[11px] text-muted">中</span>
+          <input
+            v-model.number="eqMid"
+            type="range" min="-12" max="12" step="1"
+            class="w-full" @input="pushEq"
+          />
+          <span class="text-[11px] tabular-nums text-right">{{ eqMid }}</span>
+        </div>
+        <div class="grid grid-cols-[1.5rem_1fr_2.25rem] items-center gap-2">
+          <span class="text-[11px] text-muted">高</span>
+          <input
+            v-model.number="eqHigh"
+            type="range" min="-12" max="12" step="1"
+            class="w-full" @input="pushEq"
+          />
+          <span class="text-[11px] tabular-nums text-right">{{ eqHigh }}</span>
+        </div>
+        <button
+          class="btn-ghost text-[11px] py-1 w-full"
+          @click="resetEq"
+        >
+          归零 / 关闭 EQ
+        </button>
+      </div>
     </div>
   </div>
 </template>
