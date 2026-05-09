@@ -77,6 +77,26 @@
 
 ---
 
+## macOS 适配现状
+
+已修：
+- mpv `--no-native-fs` + `--macos-fs-animation-duration=0` — 切歌不再因 Space 切换闪桌面
+- mpv binary 自动查 `/opt/homebrew/bin/mpv` (Apple Silicon brew) / `/usr/local/bin/mpv` (Intel) / `/Applications/mpv.app/Contents/MacOS/mpv`
+- folder-picker 走 osascript 选目录
+- OpenList fetcher 支持 darwin-arm64 / darwin-amd64
+- start.sh 行尾 LF，可执行
+
+要在 mac 上跑：
+1. `brew install mpv node@22` (or nvm 装 Node ≥ 22)
+2. clone + `npm run setup`
+3. 编辑 `config.json`：`library_path` 用 mac 路径（NAS 用 `/Volumes/ktv` 等 SMB 挂载点，本地路径 `/Users/.../KTV`）
+4. `bash scripts/start.sh`
+
+mac 上还可能的小坑（碰到再修）：
+- 若 brew mpv 是 0.34 以下版本，`--macos-fs-animation-duration` 不被识别——升级 mpv
+- mpv 在 macOS 多显示器场景下 fullscreen 跑哪个屏：`--fs-screen-name=…` 可指定
+- AirPlay 镜像通常稳，但 macOS Catalina 之后镜像可能要在"系统设置 → 屏幕镜像"启用
+
 ## 其他未做（review agent 找出但暂搁的）
 
 - `fillerActive` 用 discriminated union 状态机重构（当前两 flag 工作正常）
