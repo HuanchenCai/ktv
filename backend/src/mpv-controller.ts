@@ -174,6 +174,18 @@ export class MpvController extends EventEmitter {
       "--osc=no", // we draw our own controls in the web UI
       `--input-conf=${this.inputConfPath}`,
     ];
+    if (platform() === "darwin") {
+      // macOS-specific: kill the native-fullscreen Space behaviour. By
+      // default mpv on macOS opens a brand-new Space when fullscreen is
+      // toggled, and `load(replace)` between songs briefly tears down
+      // and rebuilds the window — that triggers macOS's Space switch
+      // animation and the desktop flashes through. --no-native-fs makes
+      // fullscreen a borderless window on the current Space instead, so
+      // the song change is seamless. The animation-duration override
+      // also kills the residual zoom-in animation if we ever hit a
+      // path that does enter native fs.
+      mpvArgs.push("--no-native-fs", "--macos-fs-animation-duration=0");
+    }
     // Fullscreen is applied per-load via setProperty("fullscreen", true)
     // (see loadFile). Passing --fs=yes here would also force the idle
     // window into existence on some Windows builds, which we don't want.
