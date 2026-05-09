@@ -274,7 +274,10 @@ export class MpvController extends EventEmitter {
 
   /**
    * Inspect the freshly loaded file's audio streams and pick the right
-   * channel-switching strategy.
+   * channel-switching strategy. Doesn't pick a channel itself — the
+   * orchestrator owns that policy (so it can apply a remembered
+   * preference, switch filler to vocal mode, etc.) — and listens for
+   * `audio-detected` to act once the structure is known.
    */
   private async detectAudioMode(): Promise<void> {
     if (!this.mpv) return;
@@ -289,11 +292,7 @@ export class MpvController extends EventEmitter {
       console.log(
         `[mpv] audio mode = ${this.audioMode}, tracks = ${ids.join(",") || "(stereo)"}`,
       );
-      // Re-apply the desired vocal/accompaniment selection now that we know
-      // the file's structure.
-      const accompaniment: "L" | "R" =
-        this.vocalChannelDefault === "L" ? "R" : "L";
-      await this.setChannel(accompaniment);
+      this.emit("audio-detected");
     } catch (err) {
       console.warn("[mpv] detectAudioMode failed", err);
     }

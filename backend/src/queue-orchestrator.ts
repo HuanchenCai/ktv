@@ -47,6 +47,21 @@ export class Orchestrator extends EventEmitter {
   private fillerActive = false;
   private currentChannelState: "L" | "R" | "both" = "both";
   /**
+   * The user's remembered channel choice. Carries from one song to the
+   * next so "上一首切了伴奏，下一首保持伴奏" works.
+   *   "auto-accompaniment" — initial state, picks the side opposite the
+   *      song's vocal_channel. (KTV default: tap a song, hear the
+   *      accompaniment, sing along.)
+   *   "L" / "R" / "both" — explicit raw channel the user landed on
+   *      (toggleVocal flips L↔R; setChannel sets directly).
+   * Filler uses currentVocalChannel directly to play the original
+   * vocals during random filler — without disturbing this preference.
+   */
+  private lastChannel: "L" | "R" | "both" | "auto-accompaniment" =
+    "auto-accompaniment";
+  /** vocal_channel of whatever's currently loaded in mpv (real or filler). */
+  private currentVocalChannel: "L" | "R" = "L";
+  /**
    * Race guard for skipCurrent. mpv.stop() emits a "stopped" event
    * asynchronously; by the time it arrives we may have already loaded the
    * next song via maybeAutoPlay(). Without this flag, the stale stop event
@@ -79,11 +94,17 @@ export class Orchestrator extends EventEmitter {
     });
     this.mpv.on("channel-changed", (info: { channel: "L" | "R" | "both" }) => {
       this.currentChannelState = info.channel;
+      // Filler runs on its own forced "vocal" channel; don't let that
+      // pollute the user's remembered preference.
+      if (!this.fillerActive) this.lastChannel = info.channel;
       this.broadcastPlayerState();
     });
     this.mpv.on("paused", () => this.broadcastPlayerState());
     this.mpv.on("resumed", () => this.broadcastPlayerState());
     this.mpv.on("track-started", () => this.broadcastPlayerState());
+    this.mpv.on("audio-detected", () => {
+      void this.applyChannelDecision().catch(() => {});
+    });
 
     // Bridge DownloadManager events into the legacy `download.progress`
     // event so the existing /ws fan-out keeps working unchanged.
@@ -383,6 +404,30 @@ export class Orchestrator extends EventEmitter {
 
   // --- Playback ------------------------------------------------------------
 
+  /**
+   * Picked once per loaded file (driven by mpv's audio-detected event).
+   *   Filler: always vocal — random idle playback should let the room
+   *           hear the original singer, not a karaoke instrumental.
+   *   Real song, lastChannel = "auto-accompaniment": KTV default —
+   *           opposite side from the song's vocal_channel so the
+   *           customer can sing along.
+   *   Real song, lastChannel = "L"|"R"|"both": honor the user's last
+   *           explicit pick from the previous song.
+   */
+  private async applyChannelDecision(): Promise<void> {
+    if (this.fillerActive) {
+      await this.mpv.setChannel(this.currentVocalChannel);
+      return;
+    }
+    let ch: "L" | "R" | "both";
+    if (this.lastChannel === "auto-accompaniment") {
+      ch = this.currentVocalChannel === "L" ? "R" : "L";
+    } else {
+      ch = this.lastChannel;
+    }
+    await this.mpv.setChannel(ch);
+  }
+
   private async maybeAutoPlay(): Promise<void> {
     // If a real queue song is playing, do nothing. Filler is OK to
     // displace if the queue head is now playable.
@@ -410,6 +455,7 @@ export class Orchestrator extends EventEmitter {
     }
 
     this.currentSongId = song.id;
+    this.currentVocalChannel = song.vocal_channel;
     // Promoting from filler → real song; clear the flag so onTrackEnded
     // treats the next end-of-file as a real-song completion.
     this.fillerActive = false;
@@ -589,6 +635,7 @@ export class Orchestrator extends EventEmitter {
     if (!filler || !existsSync(filler.local_path)) return;
     try {
       this.fillerActive = true;
+      this.currentVocalChannel = filler.vocal_channel;
       await this.mpv.loadFile(filler.local_path, filler.vocal_channel);
       this.broadcastPlayerState();
     } catch (err) {
