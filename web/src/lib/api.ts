@@ -311,6 +311,57 @@ export const api = {
       method: "POST",
     });
   },
+  organizePlan() {
+    return request<{
+      total_local_rows: number;
+      in_queue_skipped: number;
+      already_organized: number;
+      to_move: number;
+      sample: Array<{
+        id: number;
+        artist: string;
+        title: string;
+        from: string;
+        to: string;
+        collides_with_plan: boolean;
+      }>;
+    }>("/api/admin/organize", { method: "POST", body: "{}" });
+  },
+  organizeApply(maxFiles?: number) {
+    return request<{
+      running: boolean;
+      progress: {
+        phase: string;
+        total: number;
+        moved: number;
+        failed: number;
+        current_from: string | null;
+        current_to: string | null;
+      } | null;
+    }>("/api/admin/organize/apply", {
+      method: "POST",
+      body: JSON.stringify(maxFiles ? { max_files: maxFiles } : {}),
+    });
+  },
+  organizeState() {
+    return request<{
+      running: boolean;
+      progress: {
+        phase: string;
+        total: number;
+        moved: number;
+        failed: number;
+        current_from: string | null;
+        current_to: string | null;
+        error?: string | null;
+      } | null;
+    }>("/api/admin/organize/state");
+  },
+  organizeAbort() {
+    return request<{ aborted: true }>("/api/admin/organize/abort", {
+      method: "POST",
+    });
+  },
   reparseFilenames(apply: boolean) {
     return request<{
       dry_run: boolean;

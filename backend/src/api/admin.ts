@@ -13,6 +13,11 @@ import {
   scanBaidu,
   type BaiduScanProgress,
 } from "../baidu-scanner.ts";
+import {
+  planMoves,
+  applyMoves,
+  type OrganizeProgress,
+} from "../local-organizer.ts";
 import { pickFolder } from "../folder-picker.ts";
 import QRCode from "qrcode";
 import { networkInterfaces } from "node:os";
@@ -23,6 +28,7 @@ export type AdminEvents = EventEmitter & {
   emit(event: "scan.progress", data: ScanProgress): boolean;
   emit(event: "import.progress", data: ImportProgress): boolean;
   emit(event: "baidu-scan.progress", data: BaiduScanProgress): boolean;
+  emit(event: "organize.progress", data: OrganizeProgress): boolean;
 };
 
 export async function registerAdminRoutes(
@@ -46,6 +52,11 @@ export async function registerAdminRoutes(
   let baiduAbort: AbortController | null = null;
   let lastBaiduProgress: BaiduScanProgress | null = null;
   let lastBaiduError: string | null = null;
+
+  // Local re-organize (move files into <artist>/ folders)
+  let organizeJob: Promise<unknown> | null = null;
+  let organizeAbort: AbortController | null = null;
+  let lastOrganizeProgress: OrganizeProgress | null = null;
   fastify.post<{ Body: { max_depth?: number } }>(
     "/api/admin/scan",
     async (req, rep) => {
@@ -207,6 +218,79 @@ export async function registerAdminRoutes(
 
   fastify.post("/api/admin/baidu-scan/abort", async () => {
     if (baiduAbort) baiduAbort.abort();
+    return { aborted: true };
+  });
+
+  /**
+   * Re-organize cached local MKV files into <libraryPath>/<artist>/<file>.
+   * Dry-run by default: returns a 50-item sample + counts so the user can
+   * verify before launching.
+   *
+   * Apply mode runs in the background and emits `organize.progress`
+   * events; the UI tracks state via /api/admin/organize/state.
+   */
+  fastify.post<{ Body: { max_files?: number } }>(
+    "/api/admin/organize",
+    async (_req, rep) => {
+      if (!db || !libraryPath) {
+        return rep.code(500).send({ error: "organize not wired up" });
+      }
+      const plan = planMoves(db, libraryPath);
+      return plan;
+    },
+  );
+
+  fastify.post<{ Body: { max_files?: number } }>(
+    "/api/admin/organize/apply",
+    async (req, rep) => {
+      if (!db || !libraryPath) {
+        return rep.code(500).send({ error: "organize not wired up" });
+      }
+      if (organizeJob) {
+        return { running: true, progress: lastOrganizeProgress };
+      }
+      organizeAbort = new AbortController();
+      const maxFiles = req.body?.max_files;
+      organizeJob = Promise.resolve()
+        .then(() =>
+          applyMoves(db, libraryPath, {
+            maxFiles,
+            abortSignal: organizeAbort?.signal,
+            onProgress: (p) => {
+              lastOrganizeProgress = p;
+              events?.emit("organize.progress", p);
+            },
+          }),
+        )
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[organize] failed:", msg);
+          lastOrganizeProgress = {
+            phase: "failed",
+            total: lastOrganizeProgress?.total ?? 0,
+            moved: lastOrganizeProgress?.moved ?? 0,
+            failed: lastOrganizeProgress?.failed ?? 0,
+            current_from: null,
+            current_to: null,
+            error: msg,
+          };
+          events?.emit("organize.progress", lastOrganizeProgress);
+        })
+        .finally(() => {
+          organizeJob = null;
+          organizeAbort = null;
+        });
+      return { running: true, progress: lastOrganizeProgress };
+    },
+  );
+
+  fastify.get("/api/admin/organize/state", async () => ({
+    running: organizeJob !== null,
+    progress: lastOrganizeProgress,
+  }));
+
+  fastify.post("/api/admin/organize/abort", async () => {
+    if (organizeAbort) organizeAbort.abort();
     return { aborted: true };
   });
 

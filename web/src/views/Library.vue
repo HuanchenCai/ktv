@@ -89,6 +89,35 @@ type DedupeResult = {
 const dedupePreview = ref<DedupeResult | null>(null);
 const dedupeBusy = ref(false);
 
+// Organize local files into <artist>/ folders
+type OrganizePlan = {
+  total_local_rows: number;
+  in_queue_skipped: number;
+  already_organized: number;
+  to_move: number;
+  sample: Array<{
+    id: number;
+    artist: string;
+    title: string;
+    from: string;
+    to: string;
+    collides_with_plan: boolean;
+  }>;
+};
+type OrganizeProgress = {
+  phase: "planning" | "moving" | "done" | "failed";
+  total: number;
+  moved: number;
+  failed: number;
+  current_from: string | null;
+  current_to: string | null;
+  error?: string | null;
+};
+const organizePlan = ref<OrganizePlan | null>(null);
+const organizeProgress = ref<OrganizeProgress | null>(null);
+const organizing = ref(false);
+const organizeBatchSize = ref<number | null>(200);
+
 // Re-parse filenames (after parser bugfix)
 type ReparseResult = {
   dry_run: boolean;
@@ -170,6 +199,17 @@ onMounted(() => {
         baiduProgress.value.phase !== "done" &&
         baiduProgress.value.phase !== "failed";
       if (baiduProgress.value.phase === "done") refreshAllDebounced();
+    } else if (m.type === "organize.progress") {
+      organizeProgress.value = m.payload as OrganizeProgress;
+      organizing.value =
+        organizeProgress.value.phase !== "done" &&
+        organizeProgress.value.phase !== "failed";
+      if (organizeProgress.value.phase === "done") {
+        refreshAllDebounced();
+        // Refresh the dry-run plan so the user sees the next batch
+        // (apply was capped; what's left to do).
+        void organizePlanRun();
+      }
     }
   });
 });
@@ -307,6 +347,45 @@ const selectedNotCachedCount = computed(() => {
   }
   return n;
 });
+
+async function organizePlanRun() {
+  organizing.value = false;
+  error.value = "";
+  try {
+    organizePlan.value = await api.organizePlan();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  }
+}
+async function organizeApplyRun() {
+  if (!organizePlan.value) return;
+  const batch = organizeBatchSize.value;
+  const willMove = Math.min(
+    organizePlan.value.to_move,
+    batch ?? Number.POSITIVE_INFINITY,
+  );
+  if (
+    !confirm(
+      `确认按歌手归类移动 ${willMove} 个文件? 这会动盘上文件位置，DB 路径会同步更新。`,
+    )
+  )
+    return;
+  organizing.value = true;
+  error.value = "";
+  try {
+    await api.organizeApply(batch ?? undefined);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+    organizing.value = false;
+  }
+}
+async function organizeAbortRun() {
+  try {
+    await api.organizeAbort();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  }
+}
 
 async function reparsePreviewRun() {
   reparseBusy.value = true;
@@ -466,6 +545,103 @@ async function downloadSelected() {
         <div>{{ importProgress.phase === "listing" ? "枚举目录" : "入库" }}：扫 {{ importProgress.scanned }}，新增 {{ importProgress.added }}，跳过 {{ importProgress.skipped }}</div>
         <div v-if="importProgress.current_dir" class="truncate">
           {{ importProgress.current_dir }}
+        </div>
+      </div>
+    </div>
+
+    <!-- ORGANIZE INTO <ARTIST>/ FOLDERS -->
+    <div class="card space-y-3">
+      <div class="flex items-baseline justify-between">
+        <h3 class="h-section">按歌手归类（移动盘上文件）</h3>
+        <span class="text-xs text-muted">
+          把 NAS 上的 MV 移到 &lt;歌手&gt;/&lt;歌名&gt;.mkv，合唱按第一个歌手；DB 路径同步更新
+        </span>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          class="btn-ghost text-sm"
+          :disabled="organizing"
+          @click="organizePlanRun"
+        >
+          🔍 预览移动计划
+        </button>
+        <label class="text-xs text-muted shrink-0">每批:</label>
+        <input
+          v-model.number="organizeBatchSize"
+          type="number"
+          min="0"
+          step="100"
+          class="input !py-1.5 !px-3 text-sm w-24"
+          title="0 = 全部"
+        />
+        <button
+          v-if="organizePlan && organizePlan.to_move > 0"
+          class="btn-primary text-sm"
+          :disabled="organizing"
+          @click="organizeApplyRun"
+        >
+          📂 移动 {{ Math.min(organizePlan.to_move, organizeBatchSize ?? organizePlan.to_move) }} 个
+        </button>
+        <button
+          v-if="organizing"
+          class="btn-ghost text-xs"
+          @click="organizeAbortRun"
+        >
+          中止
+        </button>
+      </div>
+      <div v-if="organizePlan" class="text-xs text-muted space-y-2">
+        <div>
+          本地 cached: {{ organizePlan.total_local_rows }} ·
+          已就位: {{ organizePlan.already_organized }} ·
+          队列中跳过: {{ organizePlan.in_queue_skipped }} ·
+          待移动: <span class="text-accent font-semibold">{{ organizePlan.to_move }}</span>
+        </div>
+        <div
+          v-if="organizePlan.sample.length"
+          class="space-y-1 max-h-72 overflow-y-auto"
+        >
+          <div
+            v-for="m in organizePlan.sample"
+            :key="m.id"
+            class="border-l-2 border-amber-500/40 pl-2"
+          >
+            <div class="truncate text-rose-300/70">旧: {{ m.from }}</div>
+            <div class="truncate text-emerald-300">
+              新: {{ m.to }}
+              <span v-if="m.collides_with_plan" class="text-amber-300">
+                (重名 → 加序号)
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div
+        v-if="organizeProgress"
+        class="text-xs space-y-1"
+        :class="organizeProgress.phase === 'failed' ? 'text-rose-400' : 'text-muted'"
+      >
+        <div>
+          阶段:
+          {{
+            organizeProgress.phase === "moving"
+              ? "移动中"
+              : organizeProgress.phase === "failed"
+                ? "失败"
+                : organizeProgress.phase === "done"
+                  ? "完成"
+                  : "计划"
+          }}
+          · 已移 {{ organizeProgress.moved }} / {{ organizeProgress.total }}
+          <span v-if="organizeProgress.failed > 0" class="text-rose-300">
+            · 失败 {{ organizeProgress.failed }}
+          </span>
+        </div>
+        <div v-if="organizeProgress.current_to" class="truncate">
+          → {{ organizeProgress.current_to }}
+        </div>
+        <div v-if="organizeProgress.error" class="text-rose-400 break-all">
+          错误: {{ organizeProgress.error }}
         </div>
       </div>
     </div>
