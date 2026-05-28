@@ -118,6 +118,17 @@ const organizeProgress = ref<OrganizeProgress | null>(null);
 const organizing = ref(false);
 const organizeBatchSize = ref<number | null>(200);
 
+type CleanupResult = {
+  dry_run: boolean;
+  attempted: number;
+  removed: number;
+  count?: number;
+  sample?: string[];
+  failed?: Array<{ dir: string; error: string }>;
+};
+const cleanupPreview = ref<CleanupResult | null>(null);
+const cleanupBusy = ref(false);
+
 // Re-parse filenames (after parser bugfix)
 type ReparseResult = {
   dry_run: boolean;
@@ -387,6 +398,35 @@ async function organizeAbortRun() {
   }
 }
 
+async function cleanupPreviewRun() {
+  cleanupBusy.value = true;
+  error.value = "";
+  try {
+    cleanupPreview.value = await api.cleanupEmptyDirs(false);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    cleanupBusy.value = false;
+  }
+}
+async function cleanupApplyRun() {
+  if (!cleanupPreview.value || !cleanupPreview.value.count) return;
+  if (
+    !confirm(
+      `确认删除 ${cleanupPreview.value.count} 个空目录? portraits / data / .git 不动。`,
+    )
+  )
+    return;
+  cleanupBusy.value = true;
+  try {
+    cleanupPreview.value = await api.cleanupEmptyDirs(true);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    cleanupBusy.value = false;
+  }
+}
+
 async function reparsePreviewRun() {
   reparseBusy.value = true;
   error.value = "";
@@ -642,6 +682,56 @@ async function downloadSelected() {
         </div>
         <div v-if="organizeProgress.error" class="text-rose-400 break-all">
           错误: {{ organizeProgress.error }}
+        </div>
+      </div>
+    </div>
+
+    <!-- CLEANUP EMPTY DIRS (run after organize) -->
+    <div class="card space-y-3">
+      <div class="flex items-baseline justify-between">
+        <h3 class="h-section">清理空目录</h3>
+        <span class="text-xs text-muted">
+          归类完后，老的 MKV（7300首）/ 常唱1万首MKV/02/ 等空壳子目录扫掉
+        </span>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button
+          class="btn-ghost text-sm"
+          :disabled="cleanupBusy"
+          @click="cleanupPreviewRun"
+        >
+          {{ cleanupBusy ? "扫描中..." : "🔍 预览空目录" }}
+        </button>
+        <button
+          v-if="cleanupPreview && cleanupPreview.dry_run && (cleanupPreview.count ?? 0) > 0"
+          class="btn-primary text-sm"
+          :disabled="cleanupBusy"
+          @click="cleanupApplyRun"
+        >
+          🗑 删除 {{ cleanupPreview.count }} 个空目录
+        </button>
+      </div>
+      <div v-if="cleanupPreview" class="text-xs text-muted space-y-2">
+        <div v-if="cleanupPreview.dry_run">
+          找到空目录: <span class="text-accent font-semibold">{{ cleanupPreview.count }}</span>
+        </div>
+        <div v-else class="text-emerald-300">
+          已删除 {{ cleanupPreview.removed }} / {{ cleanupPreview.attempted }}
+          <span v-if="cleanupPreview.failed && cleanupPreview.failed.length" class="text-rose-300">
+            · 失败 {{ cleanupPreview.failed.length }}
+          </span>
+        </div>
+        <div
+          v-if="cleanupPreview.sample && cleanupPreview.sample.length"
+          class="space-y-0.5 max-h-60 overflow-y-auto font-mono"
+        >
+          <div
+            v-for="d in cleanupPreview.sample"
+            :key="d"
+            class="truncate"
+          >
+            {{ d }}
+          </div>
         </div>
       </div>
     </div>

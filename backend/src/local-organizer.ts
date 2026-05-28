@@ -19,8 +19,14 @@
  *   - Detects collisions across the whole batch (two distinct source
  *     files trying to land at the same target both get suffixed)
  */
-import { renameSync, mkdirSync, existsSync } from "node:fs";
-import { resolve, basename, dirname, extname } from "node:path";
+import {
+  renameSync,
+  mkdirSync,
+  existsSync,
+  readdirSync,
+  rmdirSync,
+} from "node:fs";
+import { resolve, basename, dirname, extname, sep } from "node:path";
 import type { Db } from "./db.ts";
 
 const WIN_RESERVED = /[<>:"/\\|?*\x00-\x1f]/g;
@@ -317,5 +323,111 @@ export function applyMoves(
   tick("done", null, null);
   // unused vars on some platforms
   void basename;
+  void sep;
+  return result;
+}
+
+/**
+ * After organizing, the old hierarchy (`常唱1万首MKV/02/`, `歌星分类大全/
+ * B-C开头歌星/BOY Z/`, …) is left as empty shells. Recursively delete
+ * any directory under `libraryPath` that — after pruning its empty
+ * descendants — contains no files.
+ *
+ * Safety:
+ *   - Never touches `libraryPath` itself
+ *   - Never deletes a directory whose name is in `keep` (e.g. "portraits")
+ *   - Operates depth-first so an inner empty leaf can vanish first,
+ *     enabling its parent to also be empty and vanish
+ *   - Doesn't follow symlinks (readdirSync with withFileTypes)
+ *
+ * Two-phase: planEmptyDirs returns the list it would delete; cleanup
+ * actually rmdir's them. Both are synchronous — empty-dir rmdir over
+ * SMB is microseconds.
+ */
+const DEFAULT_KEEP_DIRS = new Set([
+  "portraits",
+  "data",
+  ".git",
+  ".DS_Store",
+  "node_modules",
+]);
+
+function walkEmptyDirs(
+  dir: string,
+  libraryRoot: string,
+  keep: Set<string>,
+  out: string[],
+): boolean {
+  // Returns true iff `dir` is empty after recursive cleanup.
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  let allEmpty = true;
+  for (const ent of entries) {
+    if (ent.isSymbolicLink()) {
+      allEmpty = false;
+      continue;
+    }
+    if (ent.isDirectory()) {
+      if (keep.has(ent.name)) {
+        allEmpty = false;
+        continue;
+      }
+      const child = resolve(dir, ent.name);
+      const childEmpty = walkEmptyDirs(child, libraryRoot, keep, out);
+      if (childEmpty) {
+        // It'll get deleted by the apply step; treat as empty for our
+        // own emptiness calc.
+        if (resolve(child) !== resolve(libraryRoot)) out.push(child);
+      } else {
+        allEmpty = false;
+      }
+    } else {
+      // It's a file or other non-dir → directory is NOT empty
+      allEmpty = false;
+    }
+  }
+  return allEmpty;
+}
+
+export function planEmptyDirs(
+  libraryPath: string,
+  extraKeep: string[] = [],
+): { count: number; sample: string[]; dirs: string[] } {
+  const keep = new Set([...DEFAULT_KEEP_DIRS, ...extraKeep]);
+  const root = resolve(libraryPath);
+  if (!existsSync(root)) return { count: 0, sample: [], dirs: [] };
+  const dirs: string[] = [];
+  walkEmptyDirs(root, root, keep, dirs);
+  return { count: dirs.length, sample: dirs.slice(0, 100), dirs };
+}
+
+export type CleanupResult = {
+  attempted: number;
+  removed: number;
+  failed: Array<{ dir: string; error: string }>;
+};
+
+export function cleanupEmptyDirs(
+  libraryPath: string,
+  extraKeep: string[] = [],
+): CleanupResult {
+  const { dirs } = planEmptyDirs(libraryPath, extraKeep);
+  // dirs is in deepest-first order from the post-order walk, so
+  // rmdir works without re-checking emptiness.
+  const result: CleanupResult = { attempted: 0, removed: 0, failed: [] };
+  for (const d of dirs) {
+    result.attempted++;
+    try {
+      rmdirSync(d);
+      result.removed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      result.failed.push({ dir: d, error: msg });
+    }
+  }
   return result;
 }

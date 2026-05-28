@@ -362,6 +362,19 @@ export const api = {
       method: "POST",
     });
   },
+  cleanupEmptyDirs(apply: boolean) {
+    return request<{
+      dry_run: boolean;
+      attempted: number;
+      removed: number;
+      count?: number;
+      sample?: string[];
+      failed?: Array<{ dir: string; error: string }>;
+    }>("/api/admin/organize/cleanup-empty-dirs", {
+      method: "POST",
+      body: JSON.stringify({ apply }),
+    });
+  },
   reparseFilenames(apply: boolean) {
     return request<{
       dry_run: boolean;

@@ -16,6 +16,8 @@ import {
 import {
   planMoves,
   applyMoves,
+  planEmptyDirs,
+  cleanupEmptyDirs,
   type OrganizeProgress,
 } from "../local-organizer.ts";
 import { pickFolder } from "../folder-picker.ts";
@@ -293,6 +295,37 @@ export async function registerAdminRoutes(
     if (organizeAbort) organizeAbort.abort();
     return { aborted: true };
   });
+
+  /**
+   * Sweep empty directories under libraryPath — the husks left behind
+   * after organize moved every file out of `常唱1万首MKV/02/` etc.
+   * Always-keep set covers project-managed dirs (portraits, data).
+   *
+   * dry-run: returns count + sample.
+   * apply  : rmdir's bottom-up (deepest first) so emptied parents
+   *          collapse in the same pass.
+   */
+  fastify.post<{ Body: { apply?: boolean; keep?: string[] } }>(
+    "/api/admin/organize/cleanup-empty-dirs",
+    async (req, rep) => {
+      if (!libraryPath) {
+        return rep.code(500).send({ error: "libraryPath not wired up" });
+      }
+      const extraKeep = req.body?.keep ?? [];
+      if (req.body?.apply) {
+        const r = cleanupEmptyDirs(libraryPath, extraKeep);
+        return { dry_run: false, ...r };
+      }
+      const p = planEmptyDirs(libraryPath, extraKeep);
+      return {
+        dry_run: true,
+        attempted: 0,
+        removed: 0,
+        count: p.count,
+        sample: p.sample,
+      };
+    },
+  );
 
   /**
    * Re-run parseFilename() over every song row's cloud_path, rewriting
