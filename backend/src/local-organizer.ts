@@ -174,6 +174,16 @@ export function planMoves(db: Db, libraryPath: string): PlanResult {
     }
     claimed.add(normKey(to));
 
+    // If after collision suffixing the target equals the source, the file
+    // is effectively already where it belongs — don't move it. This
+    // happens when two artist strings (e.g. "F.I.R" and "F.I.R.") sanitize
+    // to the same dir; the first claims the no-suffix slot, the second
+    // gets " (2)" which is the exact local_path it already has.
+    if (normKey(to) === normKey(from)) {
+      alreadyOrganized++;
+      continue;
+    }
+
     moves.push({
       id: r.id,
       artist: r.artist,
@@ -205,7 +215,7 @@ export function planMoves(db: Db, libraryPath: string): PlanResult {
  * mid-batch we want to keep the already-moved rows' DB pointers correct
  * (file is at `to`), not roll the whole thing back.
  */
-export function applyMoves(
+export async function applyMoves(
   db: Db,
   libraryPath: string,
   opts: {
@@ -213,7 +223,7 @@ export function applyMoves(
     abortSignal?: AbortSignal;
     onProgress?: (p: OrganizeProgress) => void;
   } = {},
-): ApplyResult {
+): Promise<ApplyResult> {
   const plan = planMoves(db, libraryPath);
   const max = opts.maxFiles ?? Number.POSITIVE_INFINITY;
 
@@ -252,6 +262,8 @@ export function applyMoves(
       to = `${stem} (${n})${ext}`;
     }
     claimed.add(normKey(to));
+    // Same trap as plan: collision suffix bringing to back to from.
+    if (normKey(to) === normKey(from)) continue;
     fullMoves.push({
       id: r.id,
       artist: r.artist,
@@ -289,6 +301,7 @@ export function applyMoves(
 
   tick("moving", null, null);
   let lastEmitTs = 0;
+  let sinceYield = 0;
 
   for (const mv of fullMoves) {
     if (opts.abortSignal?.aborted) break;
@@ -318,6 +331,14 @@ export function applyMoves(
     if (now - lastEmitTs > 300) {
       lastEmitTs = now;
       tick("moving", mv.from, mv.to);
+    }
+    // Yield the event loop every 25 moves so /state polls, WS pushes,
+    // and aborts can still get a CPU slice while the batch runs.
+    // renameSync over SMB is ~150 ms wall time, so this is cheap.
+    sinceYield++;
+    if (sinceYield >= 25) {
+      sinceYield = 0;
+      await new Promise<void>((r) => setImmediate(r));
     }
   }
   tick("done", null, null);
