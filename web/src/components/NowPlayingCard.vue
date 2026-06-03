@@ -128,33 +128,68 @@ defineExpose({ song, vocalChannel });
   </div>
 
   <!-- CARD: phone size -->
-  <div v-else class="card overflow-hidden">
-    <div v-if="song" class="space-y-2">
-      <div class="text-[10px] uppercase tracking-[0.2em] text-accent font-semibold flex items-center gap-1.5">
-        <span class="inline-block w-1.5 h-1.5 rounded-full bg-accent animate-shimmer"></span>
-        <span>{{ paused ? "已暂停" : "正在唱" }}</span>
+  <div v-else class="card overflow-hidden p-5">
+    <div v-if="song" class="space-y-3">
+      <div class="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] font-semibold">
+        <span class="inline-flex gap-0.5 items-end h-3.5">
+          <span class="eq-bar"></span>
+          <span class="eq-bar"></span>
+          <span class="eq-bar"></span>
+          <span class="eq-bar"></span>
+        </span>
+        <span class="text-gradient-brand">
+          {{ paused ? "已暂停" : "正在唱" }}
+        </span>
       </div>
-      <div class="text-xl font-bold truncate leading-tight">{{ song.title }}</div>
-      <div class="text-sm text-white/70 truncate">{{ song.artist }}</div>
+      <div class="text-2xl font-bold truncate leading-tight tracking-tight">
+        {{ song.title }}
+      </div>
+      <div class="text-sm text-white/65 truncate">{{ song.artist }}</div>
       <div class="flex items-center gap-2 pt-1">
-        <span class="font-mono text-xs text-muted w-10 text-right">
+        <span class="font-mono text-xs text-white/50 w-10 text-right tabular-nums">
           {{ fmt(position) }}
         </span>
-        <div class="flex-1 h-1 bg-black/40 rounded-full overflow-hidden">
+        <div class="flex-1 h-1 rounded-full overflow-hidden" style="background: rgba(255,255,255,0.08)">
           <div
-            class="h-full bg-accent rounded-full transition-all"
-            :style="{ width: progressPct + '%' }"
+            class="h-full rounded-full transition-all"
+            :style="{
+              width: progressPct + '%',
+              background: 'linear-gradient(to right, #ff2e6b, #d946ef)',
+              boxShadow: '0 0 8px rgba(255,46,107,0.6)'
+            }"
           ></div>
         </div>
-        <span class="font-mono text-xs text-muted w-10">{{ fmt(duration) }}</span>
+        <span class="font-mono text-xs text-white/50 w-10 tabular-nums">
+          {{ fmt(duration) }}
+        </span>
       </div>
-      <div class="text-xs text-muted">
-        原唱声道 {{ song.vocal_channel }} · 当前 {{ channelLabel(vocalChannel) }}
+      <div class="text-xs text-white/45 flex items-center gap-2">
+        <span class="px-2 py-0.5 rounded-full text-[10px]"
+              style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08)">
+          当前 {{ channelLabel(vocalChannel) }}
+        </span>
+        <span>原唱在 {{ song.vocal_channel }}</span>
       </div>
     </div>
-    <div v-else class="text-center text-muted py-6">
-      <div class="text-4xl mb-2">🎤</div>
-      <div>空闲中</div>
+    <div v-else class="text-center py-6 space-y-3">
+      <!-- Spinning vinyl placeholder so the idle screen has motion -->
+      <div class="relative w-20 h-20 mx-auto">
+        <div
+          class="absolute inset-0 rounded-full animate-spin-slow"
+          style="
+            background:
+              repeating-radial-gradient(circle, rgba(255,255,255,0.04) 0 1px, transparent 1px 3px),
+              radial-gradient(circle at center, #18182a 35%, #0b0b14 100%);
+            box-shadow: 0 0 24px rgba(217,70,239,0.25), inset 0 0 12px rgba(0,0,0,0.6);
+          "
+        ></div>
+        <div
+          class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full"
+          style="background: linear-gradient(135deg, #ff2e6b, #d946ef)"
+        ></div>
+      </div>
+      <div class="text-base font-medium text-white/85">空闲中</div>
+      <div class="text-xs text-white/45">点首歌开嗓</div>
     </div>
   </div>
 </template>

@@ -235,27 +235,30 @@ async function add(song: Song, top: boolean) {
 </script>
 
 <template>
-  <div class="space-y-3">
-    <!-- Mode toggle: heat list with rail vs artist-first grid. -->
-    <div class="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-elevated/60">
+  <div class="space-y-4">
+    <!-- Mode toggle: a sliding pill instead of two filled buttons. -->
+    <div class="relative grid grid-cols-2 p-1 rounded-full backdrop-blur-md"
+         style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06)"
+    >
+      <!-- Sliding indicator -->
+      <span
+        class="absolute top-1 bottom-1 left-1 w-[calc(50%-0.25rem)] rounded-full transition-transform duration-300 ease-out"
+        :style="{
+          transform: mode === 'artists' ? 'translateX(100%)' : 'translateX(0)',
+          background: 'linear-gradient(135deg, #ff2e6b, #d946ef)',
+          boxShadow: '0 0 20px rgba(255,46,107,0.45), inset 0 1px 0 rgba(255,255,255,0.2)'
+        }"
+      ></span>
       <button
-        class="py-2 text-sm rounded-lg transition-colors"
-        :class="
-          mode === 'popular'
-            ? 'bg-accent text-white shadow'
-            : 'text-muted hover:text-white'
-        "
+        class="relative z-10 py-2 text-sm font-medium transition-colors"
+        :class="mode === 'popular' ? 'text-white' : 'text-white/55'"
         @click="setMode('popular')"
       >
         🔥 热门
       </button>
       <button
-        class="py-2 text-sm rounded-lg transition-colors"
-        :class="
-          mode === 'artists'
-            ? 'bg-accent text-white shadow'
-            : 'text-muted hover:text-white'
-        "
+        class="relative z-10 py-2 text-sm font-medium transition-colors"
+        :class="mode === 'artists' ? 'text-white' : 'text-white/55'"
         @click="setMode('artists')"
       >
         🎤 按歌手
@@ -294,14 +297,14 @@ async function add(song: Song, top: boolean) {
 
     <div
       v-if="mode !== 'artists' || selectedArtist"
-      class="flex items-center justify-between text-xs gap-2 flex-wrap"
+      class="flex items-center justify-between gap-2 flex-wrap pt-1"
     >
-      <span class="text-white/60 font-medium">{{ heading }}</span>
+      <h2 class="text-lg font-bold tracking-tight">{{ heading }}</h2>
       <div class="flex items-center gap-2">
         <select
           v-if="selectedArtist || q"
           v-model="sort"
-          class="bg-elevated rounded px-2 py-1 text-[11px] text-muted border-0"
+          class="rounded-full px-3 py-1.5 text-xs outline-none"
           title="排序"
         >
           <option value="popular">热度</option>
@@ -309,7 +312,7 @@ async function add(song: Song, top: boolean) {
           <option value="length">字数</option>
           <option value="year">年代</option>
         </select>
-        <span v-if="songs.length" class="text-muted tabular-nums">
+        <span v-if="songs.length" class="text-white/40 text-xs tabular-nums">
           {{ songs.length }} 首
         </span>
       </div>

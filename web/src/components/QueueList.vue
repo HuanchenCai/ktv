@@ -74,9 +74,11 @@ function dlClass(t: DownloadTask | null): string {
   <div>
     <div
       v-if="!items.length"
-      class="text-center text-muted text-xs py-6"
+      class="text-center py-12 space-y-3"
     >
-      队列空空如也
+      <div class="text-5xl opacity-60">🎵</div>
+      <div class="text-base font-medium text-white/75">队列空空如也</div>
+      <div class="text-xs text-white/40">去搜歌 tab 点几首开始吧</div>
     </div>
 
     <div v-if="error" class="text-rose-400 text-sm">{{ error }}</div>

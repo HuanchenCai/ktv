@@ -107,32 +107,41 @@ function statusIcon(state: ManagerTask["state"]): string {
 
 <template>
   <div class="p-4 space-y-3">
-    <!-- Tab switcher -->
-    <div class="flex gap-1 text-sm border-b border-white/5">
+    <!-- Tab switcher: underline pill style -->
+    <div class="flex items-stretch gap-6 text-sm pt-2 pb-1">
       <button
-        class="px-4 py-2 -mb-px border-b-2"
-        :class="
-          tab === 'queue'
-            ? 'border-accent text-accent'
-            : 'border-transparent text-muted'
-        "
+        class="relative pb-2 font-semibold transition-colors"
+        :class="tab === 'queue' ? 'text-white' : 'text-white/45'"
         @click="tab = 'queue'"
       >
-        播放队列 ({{ queueLength }})
+        播放队列
+        <span class="ml-1 text-xs font-normal tabular-nums opacity-70">
+          {{ queueLength }}
+        </span>
+        <span
+          v-if="tab === 'queue'"
+          class="absolute left-0 right-0 bottom-0 h-0.5 rounded-full"
+          style="background: linear-gradient(90deg, #ff2e6b, #d946ef)"
+        ></span>
       </button>
       <button
-        class="px-4 py-2 -mb-px border-b-2"
-        :class="
-          tab === 'downloads'
-            ? 'border-accent text-accent'
-            : 'border-transparent text-muted'
-        "
+        class="relative pb-2 font-semibold transition-colors"
+        :class="tab === 'downloads' ? 'text-white' : 'text-white/45'"
         @click="tab = 'downloads'"
       >
         正在下载
-        <span v-if="counts.downloading + counts.queued > 0" class="text-blue-400">
-          ({{ counts.downloading + counts.queued }})
+        <span
+          v-if="counts.downloading + counts.queued > 0"
+          class="ml-1 text-xs font-normal tabular-nums"
+          style="color: #22d3ee"
+        >
+          {{ counts.downloading + counts.queued }}
         </span>
+        <span
+          v-if="tab === 'downloads'"
+          class="absolute left-0 right-0 bottom-0 h-0.5 rounded-full"
+          style="background: linear-gradient(90deg, #ff2e6b, #d946ef)"
+        ></span>
       </button>
     </div>
 

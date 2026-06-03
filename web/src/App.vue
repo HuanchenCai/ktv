@@ -27,8 +27,8 @@ const wsDotClass = computed(() => ({
          /artists can always jump back to /tv. Just the size differs. -->
     <header
       :class="[
-        'flex items-center justify-between border-b border-border/60 backdrop-blur-md',
-        isTv ? 'px-8 py-4 bg-bg/40' : 'px-4 py-3 sticky top-0 bg-bg/80 z-30',
+        'flex items-center justify-between glass-bar border-b',
+        isTv ? 'px-8 py-4' : 'px-4 py-3 sticky top-0 z-30',
       ]"
     >
       <RouterLink
@@ -148,20 +148,40 @@ const wsDotClass = computed(() => ({
     <!-- Phone-only: mini player above tab bar when on a phone-tab route -->
     <MiniPlayer v-if="isPhoneTabRoute" />
 
-    <!-- Phone tab bar: only on the three phone-driven routes -->
+    <!-- Phone tab bar: only on the three phone-driven routes. Glass
+         surface lifted slightly off the bottom so it floats. -->
     <nav
       v-if="isPhoneTabRoute"
-      class="fixed bottom-0 left-0 right-0 flex bg-elevated/95 backdrop-blur-md border-t border-border/60 pb-[env(safe-area-inset-bottom)]"
+      class="fixed bottom-0 left-0 right-0 z-40 px-3 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2"
     >
-      <RouterLink to="/search" class="tab" :class="{ active: tab === 'search' }">
-        <span class="tab-icon">🔍</span><span>搜歌</span>
-      </RouterLink>
-      <RouterLink to="/queue" class="tab" :class="{ active: tab === 'queue' }">
-        <span class="tab-icon">📋</span><span>已点</span>
-      </RouterLink>
-      <RouterLink to="/now" class="tab" :class="{ active: tab === 'now' }">
-        <span class="tab-icon">🎤</span><span>播放</span>
-      </RouterLink>
+      <div
+        class="glass-bar border rounded-2xl flex items-stretch shadow-deep"
+      >
+        <RouterLink to="/search" class="tab" :class="{ active: tab === 'search' }">
+          <span class="tab-icon">🔍</span><span>搜歌</span>
+          <span
+            v-if="tab === 'search'"
+            class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full"
+            style="background: linear-gradient(90deg, #ff2e6b, #d946ef)"
+          ></span>
+        </RouterLink>
+        <RouterLink to="/queue" class="tab" :class="{ active: tab === 'queue' }">
+          <span class="tab-icon">📋</span><span>已点</span>
+          <span
+            v-if="tab === 'queue'"
+            class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full"
+            style="background: linear-gradient(90deg, #ff2e6b, #d946ef)"
+          ></span>
+        </RouterLink>
+        <RouterLink to="/now" class="tab" :class="{ active: tab === 'now' }">
+          <span class="tab-icon">🎤</span><span>播放</span>
+          <span
+            v-if="tab === 'now'"
+            class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full"
+            style="background: linear-gradient(90deg, #ff2e6b, #d946ef)"
+          ></span>
+        </RouterLink>
+      </div>
     </nav>
   </div>
 </template>

@@ -31,12 +31,7 @@ async function load() {
 
 onMounted(load);
 
-function colorFor(s: string): string {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  const hues = [340, 200, 160, 280, 30, 0, 220, 50, 100, 320];
-  return `hsl(${hues[Math.abs(h) % hues.length]}, 60%, 22%)`;
-}
+import { artistColor as colorFor } from "../lib/artist-color";
 
 function pick(a: string) {
   const next = selected.value === a ? null : a;
@@ -53,66 +48,91 @@ function openAll() {
 </script>
 
 <template>
-  <div class="space-y-2">
+  <div class="space-y-3">
     <div class="flex items-baseline justify-between">
       <h3 class="h-section">流行歌手</h3>
       <button
-        class="text-xs text-muted hover:text-white transition-colors"
+        class="text-xs text-white/50 hover:text-white transition-colors flex items-center gap-1"
         @click="openAll"
       >
-        全部 →
+        全部 <span aria-hidden="true">→</span>
       </button>
     </div>
-    <div v-if="!items.length" class="text-xs text-muted">尚未抓取头像</div>
+    <div v-if="!items.length" class="text-xs text-white/40">尚未抓取头像</div>
     <div
       v-else
-      class="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 scroll-smooth"
+      class="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1 scroll-smooth"
     >
       <button
         v-for="r in items"
         :key="r.artist"
-        class="shrink-0 flex flex-col items-center gap-1.5 group"
+        class="shrink-0 flex flex-col items-center gap-2 group"
         @click="pick(r.artist)"
       >
+        <!-- Halo wrap so a glow can sit OUTSIDE the circle clip -->
         <div
-          class="rounded-full overflow-hidden ring-2 transition-all"
+          class="relative rounded-full transition-all duration-300"
           :class="[
-            size === 'hero' ? 'w-24 h-24' : 'w-16 h-16',
-            selected === r.artist
-              ? 'ring-accent shadow-glow'
-              : 'ring-border group-hover:ring-accent/60',
+            size === 'hero' ? 'w-24 h-24' : 'w-[72px] h-[72px]',
+            selected === r.artist ? 'scale-105' : 'group-hover:scale-105',
           ]"
-          :style="!r.portrait ? { background: colorFor(r.artist) } : undefined"
         >
-          <img
-            v-if="r.portrait"
-            :src="r.portrait"
-            :alt="r.artist"
-            class="w-full h-full object-cover"
-            loading="lazy"
-          />
+          <!-- Glow ring -->
           <div
-            v-else
-            class="w-full h-full grid place-items-center font-bold text-white/90"
-            :class="size === 'hero' ? 'text-3xl' : 'text-xl'"
+            v-if="selected === r.artist"
+            class="absolute inset-0 rounded-full"
+            style="
+              background: conic-gradient(from 0deg, #ff2e6b, #d946ef, #8b5cf6, #22d3ee, #ff2e6b);
+              filter: blur(8px);
+              opacity: 0.7;
+            "
+          ></div>
+          <!-- Solid ring -->
+          <div
+            class="absolute inset-0 rounded-full transition-all"
+            :class="selected === r.artist ? '' : 'ring-1 ring-white/10 group-hover:ring-white/25'"
+            :style="
+              selected === r.artist
+                ? 'background: linear-gradient(135deg, #ff2e6b, #d946ef); padding: 2.5px;'
+                : ''
+            "
+          ></div>
+          <!-- Image clipped inside -->
+          <div
+            class="absolute inset-0 rounded-full overflow-hidden"
+            :class="selected === r.artist ? 'm-[2.5px]' : ''"
+            :style="!r.portrait ? { background: colorFor(r.artist) } : undefined"
           >
-            {{ r.artist[0] }}
+            <img
+              v-if="r.portrait"
+              :src="r.portrait"
+              :alt="r.artist"
+              class="w-full h-full object-cover"
+              loading="lazy"
+            />
+            <div
+              v-else
+              class="w-full h-full grid place-items-center font-bold text-white/90"
+              :class="size === 'hero' ? 'text-3xl' : 'text-xl'"
+            >
+              {{ r.artist[0] }}
+            </div>
           </div>
         </div>
         <div
           class="font-medium text-center leading-tight truncate"
           :class="[
-            size === 'hero' ? 'text-sm w-24' : 'text-xs w-16',
-            selected === r.artist ? 'text-accent' : 'text-white/90',
+            size === 'hero' ? 'text-sm w-24' : 'text-xs w-[72px]',
+            selected === r.artist ? 'text-gradient-brand font-semibold' : 'text-white/90',
           ]"
         >
           {{ r.artist }}
         </div>
         <div
-          class="text-[10px] text-muted"
+          class="text-[10px] text-white/40 tabular-nums -mt-1"
           :class="size === 'hero' ? 'text-[11px]' : ''"
         >
-          {{ r.count }} 首
+          {{ r.count }}
         </div>
       </button>
     </div>

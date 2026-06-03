@@ -84,61 +84,74 @@ async function resetEq() {
 </script>
 
 <template>
-  <div class="card space-y-3 p-4">
+  <div class="card space-y-4 p-5">
     <div class="flex items-center justify-between">
-      <h3 class="text-sm font-semibold">控制</h3>
+      <h3 class="h-section">控制台</h3>
       <span
         v-if="lastAction"
-        class="text-xs text-accent animate-fade-in"
+        class="text-xs text-gradient-brand font-semibold animate-fade-in"
       >
         {{ lastAction }}
       </span>
     </div>
 
-    <button class="btn-primary w-full py-2.5 text-sm" @click="doToggle">
+    <button class="btn-primary w-full py-3 text-base font-semibold" @click="doToggle">
       🎙 切原唱 / 伴唱
     </button>
 
+    <!-- Channel select: 3 pills in a segmented bar -->
     <div class="grid grid-cols-3 gap-2">
       <button
-        class="btn-ghost text-xs py-1.5"
+        class="rounded-full py-2 text-xs font-medium text-white/85 transition-all active:scale-[0.96]"
+        style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08)"
         @click="setChan('L')"
-        title="只播左声道"
       >
         只 L
       </button>
       <button
-        class="btn-ghost text-xs py-1.5"
+        class="rounded-full py-2 text-xs font-medium text-white/85 transition-all active:scale-[0.96]"
+        style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08)"
         @click="setChan('both')"
-        title="双声道一起播"
       >
         双声道
       </button>
       <button
-        class="btn-ghost text-xs py-1.5"
+        class="rounded-full py-2 text-xs font-medium text-white/85 transition-all active:scale-[0.96]"
+        style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08)"
         @click="setChan('R')"
-        title="只播右声道"
       >
         只 R
       </button>
     </div>
 
     <div class="grid grid-cols-3 gap-2">
-      <button class="btn-ghost text-xs py-1.5" @click="doReplay">↻ 重唱</button>
       <button
-        class="btn-ghost text-xs py-1.5"
-        @click="doReopen"
-        title="窗口被关掉了？再开"
+        class="rounded-full py-2 text-xs font-medium text-white/85 transition-all active:scale-[0.96]"
+        style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08)"
+        @click="doReplay"
       >
-        🔁 重开视频
+        ↻ 重唱
       </button>
-      <button class="btn-ghost text-xs py-1.5" @click="doSkip">⏭ 切歌</button>
+      <button
+        class="rounded-full py-2 text-xs font-medium text-white/85 transition-all active:scale-[0.96]"
+        style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08)"
+        @click="doReopen"
+      >
+        🔁 重开
+      </button>
+      <button
+        class="rounded-full py-2 text-xs font-medium text-white/85 transition-all active:scale-[0.96]"
+        style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08)"
+        @click="doSkip"
+      >
+        ⏭ 切歌
+      </button>
     </div>
 
-    <div class="space-y-1.5 pt-1">
-      <div class="flex justify-between text-[11px] text-muted">
-        <span>音量</span>
-        <span class="font-mono tabular-nums">{{ volume }}</span>
+    <div class="space-y-2 pt-2">
+      <div class="flex justify-between text-xs">
+        <span class="text-white/55 font-medium">🔊 音量</span>
+        <span class="font-mono tabular-nums text-white/85 font-semibold">{{ volume }}</span>
       </div>
       <input
         v-model.number="volume"
