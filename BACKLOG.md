@@ -85,6 +85,7 @@
 - folder-picker 走 osascript 选目录
 - OpenList fetcher 支持 darwin-arm64 / darwin-amd64
 - start.sh 行尾 LF，可执行
+- QR 贴图浮窗 mac 版（`scripts/qr-floater.swift`）：AppKit NSWindow + `CGShieldingWindowLevel()` + `collectionBehavior=[.canJoinAllSpaces,.fullScreenAuxiliary,.stationary]`，跟 Windows 版本同形态（顶层、鼠标穿透、不进 Dock）。需要 `xcode-select --install` 装 swift CLI
 
 要在 mac 上跑：
 1. `brew install mpv node@22` (or nvm 装 Node ≥ 22)

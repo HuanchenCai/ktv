@@ -213,7 +213,9 @@ async function main() {
 
   const qrFloaters: FloaterHandle[] = [];
   if (config.qr_floater.enabled && qrPath) {
-    const scriptPath = resolve(root, "scripts", "qr-floater.ps1");
+    const scriptName =
+      process.platform === "darwin" ? "qr-floater.swift" : "qr-floater.ps1";
+    const scriptPath = resolve(root, "scripts", scriptName);
     const urlFloater = startQrFloater({
       imagePath: qrPath,
       corner: config.qr_floater.corner,
