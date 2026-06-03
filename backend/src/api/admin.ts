@@ -45,6 +45,12 @@ export async function registerAdminRoutes(
   events?: AdminEvents,
   downloads?: DownloadManager,
   baiduCreds?: { bduss?: string; stoken?: string },
+  wifiCreds?: {
+    ssid?: string;
+    password?: string;
+    security?: "WPA" | "WEP" | "nopass";
+    hidden?: boolean;
+  },
 ): Promise<void> {
   let portraitJob: Promise<PortraitProgress> | null = null;
   let lastPortraitProgress: PortraitProgress | null = null;
@@ -95,6 +101,32 @@ export async function registerAdminRoutes(
       width: 256,
     });
     return { url, qr_data_url: dataUrl, lan_ips: lanIps };
+  });
+
+  /**
+   * Standalone WiFi QR: scan to join the network, no URL involved.
+   * Returns `null` payload if no SSID is configured.
+   */
+  fastify.get("/api/admin/qrcode/wifi", async () => {
+    if (!wifiCreds?.ssid) return { configured: false, qr_data_url: null };
+    const payload =
+      "WIFI:" +
+      `S:${wifiCreds.ssid.replace(/([\\;,:"])/g, "\\$1")};` +
+      `T:${wifiCreds.security ?? "WPA"};` +
+      (wifiCreds.security === "nopass"
+        ? ""
+        : `P:${(wifiCreds.password ?? "").replace(/([\\;,:"])/g, "\\$1")};`) +
+      `H:${wifiCreds.hidden ? "true" : "false"};;`;
+    const dataUrl = await QRCode.toDataURL(payload, {
+      errorCorrectionLevel: "M",
+      width: 256,
+    });
+    return {
+      configured: true,
+      qr_data_url: dataUrl,
+      ssid: wifiCreds.ssid,
+      security: wifiCreds.security ?? "WPA",
+    };
   });
 
   /**

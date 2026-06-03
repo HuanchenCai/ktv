@@ -219,6 +219,14 @@ export const api = {
       "/api/admin/qrcode",
     );
   },
+  qrWifi() {
+    return request<{
+      configured: boolean;
+      qr_data_url: string | null;
+      ssid?: string;
+      security?: string;
+    }>("/api/admin/qrcode/wifi");
+  },
   scan(max_depth = 3) {
     return request<{ inserted: number; updated: number; skipped: number }>(
       "/api/admin/scan",

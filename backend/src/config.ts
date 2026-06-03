@@ -41,6 +41,37 @@ const ConfigSchema = z.object({
       request_delay_ms: z.number().int().min(0).max(5000).default(300),
     })
     .default({}),
+  /**
+   * Optional WiFi info baked into a second QR code on /tv (and on the
+   * always-on-top floater if enabled). Scanning it joins the network;
+   * the guest then scans the URL QR to point a song.
+   * Leave ssid empty to skip the WiFi QR entirely.
+   */
+  wifi: z
+    .object({
+      ssid: z.string().default(""),
+      password: z.string().default(""),
+      security: z.enum(["WPA", "WEP", "nopass"]).default("WPA"),
+      hidden: z.boolean().default(false),
+    })
+    .default({}),
+  /**
+   * "Sticker" QR: a borderless, always-on-top, click-through window
+   * pinned to a screen corner so the QR is visible even when mpv
+   * isn't fullscreen, isn't running, or the user switched apps.
+   * Windows only for now (PowerShell + WinForms subprocess).
+   */
+  qr_floater: z
+    .object({
+      enabled: z.boolean().default(false),
+      // top-right | top-left | bottom-right | bottom-left
+      corner: z
+        .enum(["top-right", "top-left", "bottom-right", "bottom-left"])
+        .default("top-right"),
+      size: z.number().int().min(80).max(600).default(220),
+      margin: z.number().int().min(0).max(200).default(24),
+    })
+    .default({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

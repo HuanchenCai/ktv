@@ -19,6 +19,7 @@ import { registerSongsRoutes } from "./api/songs.ts";
 import { registerQueueRoutes } from "./api/queue.ts";
 import { registerControlRoutes } from "./api/control.ts";
 import { registerAdminRoutes } from "./api/admin.ts";
+import { startQrFloater, type FloaterHandle } from "./qr-floater.ts";
 import { registerWs } from "./ws.ts";
 
 async function main() {
@@ -114,26 +115,64 @@ async function main() {
 
   // --- QR for the on-TV overlay ---------------------------------------------
 
+  /** Escape WiFi-QR special chars per the standard: \ ; , : " all need a
+   * leading backslash so SSIDs and passwords with these survive parsing. */
+  function escapeWifi(s: string): string {
+    return s.replace(/([\\;,:"])/g, "\\$1");
+  }
+  function wifiQrPayload(opts: {
+    ssid: string;
+    password: string;
+    security: "WPA" | "WEP" | "nopass";
+    hidden: boolean;
+  }): string {
+    return (
+      "WIFI:" +
+      `S:${escapeWifi(opts.ssid)};` +
+      `T:${opts.security};` +
+      (opts.security === "nopass"
+        ? ""
+        : `P:${escapeWifi(opts.password)};`) +
+      `H:${opts.hidden ? "true" : "false"};;`
+    );
+  }
+
   let qrPath: string | null = null;
+  let qrWifiPath: string | null = null;
   if (config.mpv.qr_overlay) {
     try {
-      qrPath = resolve(root, "data", "qr.png");
+      const dataDir = resolve(root, "data");
+      mkdirSync(dataDir, { recursive: true });
+      qrPath = resolve(dataDir, "qr.png");
       const lan = primaryLanIp();
       const url = `http://${lan ?? "localhost"}:${config.http_port}`;
       const png = await QRCode.toBuffer(url, {
         errorCorrectionLevel: "M",
         margin: 2,
-        // 240px gives ~8 px/module for typical LAN URLs while staying
-        // discreet as a corner overlay on a 1080p+ output.
         width: 240,
         color: { dark: "#000000", light: "#ffffff" },
       });
-      mkdirSync(resolve(root, "data"), { recursive: true });
       writeFileSync(qrPath, png);
       console.log(`[main] QR for ${url} written to ${qrPath}`);
+
+      // Optional WiFi QR — only if SSID configured.
+      if (config.wifi.ssid) {
+        qrWifiPath = resolve(dataDir, "qr-wifi.png");
+        const wifiPng = await QRCode.toBuffer(wifiQrPayload(config.wifi), {
+          errorCorrectionLevel: "M",
+          margin: 2,
+          width: 240,
+          color: { dark: "#000000", light: "#ffffff" },
+        });
+        writeFileSync(qrWifiPath, wifiPng);
+        console.log(
+          `[main] WiFi QR for SSID="${config.wifi.ssid}" written to ${qrWifiPath}`,
+        );
+      }
     } catch (err) {
       console.warn("[main] QR generation failed; overlay disabled:", err);
       qrPath = null;
+      qrWifiPath = null;
     }
   }
 
@@ -153,6 +192,50 @@ async function main() {
       `[main] mpv failed to start (will retry on first playback attempt):`,
       err,
     );
+  }
+
+  // --- Always-on-top "sticker" QR windows (Windows only) -------------------
+  //
+  // Two independent floaters: the KTV URL QR sits in the configured corner
+  // (default top-right). When a WiFi QR exists too, a second floater spawns
+  // in the OPPOSITE horizontal corner so the two never overlap regardless
+  // of screen size.
+
+  const oppositeHorizontal = (
+    c: "top-right" | "top-left" | "bottom-right" | "bottom-left",
+  ) =>
+    ({
+      "top-right": "top-left",
+      "top-left": "top-right",
+      "bottom-right": "bottom-left",
+      "bottom-left": "bottom-right",
+    }[c] as typeof c);
+
+  const qrFloaters: FloaterHandle[] = [];
+  if (config.qr_floater.enabled && qrPath) {
+    const scriptPath = resolve(root, "scripts", "qr-floater.ps1");
+    const urlFloater = startQrFloater({
+      imagePath: qrPath,
+      corner: config.qr_floater.corner,
+      size: config.qr_floater.size,
+      margin: config.qr_floater.margin,
+      scriptPath,
+      label: "扫码点歌",
+      labelColor: "#be185d",
+    });
+    if (urlFloater) qrFloaters.push(urlFloater);
+    if (qrWifiPath) {
+      const wifiFloater = startQrFloater({
+        imagePath: qrWifiPath,
+        corner: oppositeHorizontal(config.qr_floater.corner),
+        size: config.qr_floater.size,
+        margin: config.qr_floater.margin,
+        scriptPath,
+        label: "连 WiFi",
+        labelColor: "#0e7490",
+      });
+      if (wifiFloater) qrFloaters.push(wifiFloater);
+    }
   }
 
   // --- Download manager (BDUSS-direct) -------------------------------------
@@ -274,6 +357,12 @@ async function main() {
       bduss: process.env.BDUSS || config.baidu.bduss,
       stoken: process.env.STOKEN || config.baidu.stoken,
     },
+    {
+      ssid: config.wifi.ssid,
+      password: config.wifi.password,
+      security: config.wifi.security,
+      hidden: config.wifi.hidden,
+    },
   );
   await registerWs(fastify, orchestrator, adminEvents, downloads);
 
@@ -366,6 +455,13 @@ async function main() {
   const shutdown = async () => {
     console.log("\n[main] shutting down ...");
     orchestrator.stop();
+    for (const f of qrFloaters) {
+      try {
+        f.stop();
+      } catch {
+        /* ignore */
+      }
+    }
     try {
       await mpv.shutdown();
     } catch {
