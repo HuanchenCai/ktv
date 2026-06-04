@@ -149,7 +149,7 @@ async function main() {
       const png = await QRCode.toBuffer(url, {
         errorCorrectionLevel: "M",
         margin: 2,
-        width: 240,
+        width: 160,
         color: { dark: "#000000", light: "#ffffff" },
       });
       writeFileSync(qrPath, png);
@@ -178,11 +178,20 @@ async function main() {
 
   // --- mpv ------------------------------------------------------------------
 
+  // In-video QR overlays drawn directly onto the MV (top-right = point-song
+  // URL, top-left = WiFi). Visible over fullscreen and on AirPlay/HDMI mirror.
+  const qrOverlays: Array<{
+    path: string;
+    corner: "top-left" | "top-right" | "bottom-left" | "bottom-right";
+  }> = [];
+  if (qrPath) qrOverlays.push({ path: qrPath, corner: "top-right" });
+  if (qrWifiPath) qrOverlays.push({ path: qrWifiPath, corner: "top-left" });
+
   const mpv = new MpvController({
     vocalChannelDefault: config.vocal_channel_default,
     binaryPath: config.mpv.binary_path || undefined,
     fullscreen: config.mpv.fullscreen,
-    qrOverlayPath: qrPath,
+    qrOverlays,
   });
 
   try {

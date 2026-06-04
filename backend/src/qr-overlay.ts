@@ -19,7 +19,7 @@ export type BgraOverlay = {
  * The output file is written to a fixed path inside the OS temp dir; we
  * overwrite on every call so the bytes track the current QR.
  */
-export function prepareQrBgra(pngPath: string): BgraOverlay {
+export function prepareQrBgra(pngPath: string, outName = "qr.bgra"): BgraOverlay {
   const buf = readFileSync(pngPath);
   const png = PNG.sync.read(buf);
   const data = Buffer.from(png.data); // copy out of pngjs's internal buffer
@@ -31,7 +31,7 @@ export function prepareQrBgra(pngPath: string): BgraOverlay {
   }
   const stageDir = join(tmpdir(), "ktv-mpv");
   mkdirSync(stageDir, { recursive: true });
-  const outPath = join(stageDir, "qr.bgra");
+  const outPath = join(stageDir, outName);
   writeFileSync(outPath, data);
   return {
     path: outPath,

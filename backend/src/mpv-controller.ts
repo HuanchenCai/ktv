@@ -5,6 +5,8 @@ import { platform, tmpdir } from "node:os";
 import { resolve, dirname, join } from "node:path";
 import { prepareQrBgra, type BgraOverlay } from "./qr-overlay.ts";
 
+type OverlayCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
 /**
  * node-mpv 1.x — constructor spawns mpv immediately (no .start() method).
  */
@@ -87,8 +89,9 @@ export class MpvController extends EventEmitter {
   private binaryPath: string;
   private fullscreen: boolean;
   private qrOverlayPath: string | null;
+  private qrOverlaySpecs: Array<{ path: string; corner: OverlayCorner }>;
   private inputConfPath: string | null = null;
-  private overlayBgra: BgraOverlay | null = null;
+  private overlays: Array<{ bgra: BgraOverlay; corner: OverlayCorner }> = [];
 
   /** "stereo" = single-stream pan mode; "tracks" = multi-track aid mode */
   private audioMode: "stereo" | "tracks" = "stereo";
@@ -107,18 +110,36 @@ export class MpvController extends EventEmitter {
    */
   private eofPoller: ReturnType<typeof setInterval> | null = null;
   private eofLatched = false;
+  /**
+   * True from the moment loadFile() starts swapping in a new file until mpv
+   * emits "started" for it. During this window the OLD file may still report
+   * eof-reached=true (it was parked at EOF under --keep-open), which would
+   * make the EOF poller fire a spurious track-ended and yank the song the
+   * user just queued. Suppress the poller while loading to close that race.
+   */
+  private loading = false;
+  private loadingTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(opts: {
     vocalChannelDefault: "L" | "R";
     binaryPath?: string;
     fullscreen?: boolean;
     qrOverlayPath?: string | null;
+    /** Multiple in-video QR overlays, each pinned to a screen corner. */
+    qrOverlays?: Array<{ path: string; corner: OverlayCorner }>;
   }) {
     super();
     this.vocalChannelDefault = opts.vocalChannelDefault;
     this.binaryPath = opts.binaryPath ?? "";
     this.fullscreen = opts.fullscreen ?? false;
     this.qrOverlayPath = opts.qrOverlayPath ?? null;
+    // Prefer the explicit multi-overlay list; fall back to the single
+    // top-right overlay for backward compatibility.
+    this.qrOverlaySpecs =
+      opts.qrOverlays ??
+      (opts.qrOverlayPath
+        ? [{ path: opts.qrOverlayPath, corner: "top-right" }]
+        : []);
   }
 
   async start(): Promise<void> {
@@ -194,17 +215,19 @@ export class MpvController extends EventEmitter {
     // command consumes a raw BGRA file and draws on the OSD layer — that's
     // independent of the filter chain, so audio routing (incl. multi-track
     // aid switching) is unaffected.
-    if (this.qrOverlayPath && existsSync(this.qrOverlayPath)) {
+    this.overlays = [];
+    this.qrOverlaySpecs.forEach((spec, i) => {
+      if (!existsSync(spec.path)) return;
       try {
-        this.overlayBgra = prepareQrBgra(this.qrOverlayPath);
+        const bgra = prepareQrBgra(spec.path, `qr-${i}.bgra`);
+        this.overlays.push({ bgra, corner: spec.corner });
         console.log(
-          `[mpv] QR overlay prepared (${this.overlayBgra.width}x${this.overlayBgra.height} -> ${this.overlayBgra.path})`,
+          `[mpv] QR overlay #${i} prepared (${bgra.width}x${bgra.height} @ ${spec.corner})`,
         );
       } catch (err) {
-        console.warn("[mpv] QR overlay prep failed; disabling:", err);
-        this.overlayBgra = null;
+        console.warn(`[mpv] QR overlay #${i} prep failed; skipping:`, err);
       }
-    }
+    });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.mpv = new (MpvCtor as any)(mpvOpts, mpvArgs) as MpvLike;
@@ -216,8 +239,13 @@ export class MpvController extends EventEmitter {
     this.mpv.on("stopped", () => this.emit("track-ended"));
     this.mpv.on("started", () => {
       // New file is playing — clear the EOF latch so the next end-of-file
-      // can fire track-ended again.
+      // can fire track-ended again, and end the load-suppression window.
       this.eofLatched = false;
+      this.loading = false;
+      if (this.loadingTimer) {
+        clearTimeout(this.loadingTimer);
+        this.loadingTimer = null;
+      }
       void this.detectAudioMode().catch(() => {});
       void this.applyQrOverlay().catch(() => {});
       this.emit("track-started", { channel: this.currentChannel });
@@ -237,7 +265,7 @@ export class MpvController extends EventEmitter {
   private startEofPoller(): void {
     if (this.eofPoller) return;
     this.eofPoller = setInterval(async () => {
-      if (!this.mpv) return;
+      if (!this.mpv || this.loading) return;
       try {
         const eof = await this.mpv.getProperty("eof-reached");
         if (eof === true && !this.eofLatched) {
@@ -261,26 +289,39 @@ export class MpvController extends EventEmitter {
    * top-right corner with a 40 px margin.
    */
   private async applyQrOverlay(): Promise<void> {
-    if (!this.mpv || !this.overlayBgra) return;
+    if (!this.mpv || this.overlays.length === 0) return;
+    const margin = 28;
+    let osdW = 1920;
+    let osdH = 1080;
     try {
-      const osdW = Number(await this.mpv.getProperty("osd-width")) || 1920;
-      const x = Math.max(0, osdW - this.overlayBgra.width - 40);
-      const y = 40;
-      await Promise.resolve(
-        this.mpv.command("overlay-add", [
-          0,
-          x,
-          y,
-          this.overlayBgra.path,
-          0,
-          "bgra",
-          this.overlayBgra.width,
-          this.overlayBgra.height,
-          this.overlayBgra.stride,
-        ]),
-      );
-    } catch (err) {
-      console.warn("[mpv] overlay-add failed:", err);
+      osdW = Number(await this.mpv.getProperty("osd-width")) || osdW;
+      osdH = Number(await this.mpv.getProperty("osd-height")) || osdH;
+    } catch {
+      /* use defaults */
+    }
+    for (let i = 0; i < this.overlays.length; i++) {
+      const { bgra, corner } = this.overlays[i];
+      const left = corner.endsWith("left");
+      const top = corner.startsWith("top");
+      const x = left ? margin : Math.max(0, osdW - bgra.width - margin);
+      const y = top ? margin : Math.max(0, osdH - bgra.height - margin);
+      try {
+        await Promise.resolve(
+          this.mpv.command("overlay-add", [
+            i,
+            x,
+            y,
+            bgra.path,
+            0,
+            "bgra",
+            bgra.width,
+            bgra.height,
+            bgra.stride,
+          ]),
+        );
+      } catch (err) {
+        console.warn(`[mpv] overlay-add #${i} failed:`, err);
+      }
     }
   }
 
@@ -316,6 +357,16 @@ export class MpvController extends EventEmitter {
     // Clear the EOF latch immediately so a poll between load() returning
     // and the "started" event can't accidentally re-fire track-ended.
     this.eofLatched = false;
+    // Suppress the EOF poller until the new file's "started" event arrives,
+    // so a stale eof-reached from the just-parked previous file can't fire a
+    // spurious track-ended mid-swap. Safety timer clears it if "started" is
+    // somehow never emitted (e.g. a load error), so the poller can't wedge.
+    this.loading = true;
+    if (this.loadingTimer) clearTimeout(this.loadingTimer);
+    this.loadingTimer = setTimeout(() => {
+      this.loading = false;
+      this.loadingTimer = null;
+    }, 5000);
     // Reset to a known state before loading; channel will be re-applied
     // by detectAudioMode after the 'started' event.
     await Promise.resolve(this.removeKaraokeFilter()).catch(() => {});
@@ -505,7 +556,9 @@ export class MpvController extends EventEmitter {
     }
     if (this.mpv) {
       try {
-        await Promise.resolve(this.mpv.command("overlay-remove", [0]));
+        for (let i = 0; i < Math.max(1, this.overlays.length); i++) {
+          await Promise.resolve(this.mpv.command("overlay-remove", [i]));
+        }
       } catch {
         /* ignore */
       }
