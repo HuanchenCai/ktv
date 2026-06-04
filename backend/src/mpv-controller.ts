@@ -395,6 +395,26 @@ export class MpvController extends EventEmitter {
     this.currentChannel = "both";
   }
 
+  /** Toggle/set mpv's fullscreen state directly. */
+  async setFullscreen(on: boolean): Promise<void> {
+    if (!this.mpv) return;
+    try {
+      await Promise.resolve(this.mpv.setProperty("fullscreen", on));
+    } catch (err) {
+      console.warn("[mpv] setFullscreen failed:", err);
+    }
+  }
+
+  async isFullscreen(): Promise<boolean> {
+    if (!this.mpv) return false;
+    try {
+      const v = await this.mpv.getProperty("fullscreen");
+      return Boolean(v);
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * "L" / "R" semantics:
    *   - stereo mode: pan the named channel to both speakers

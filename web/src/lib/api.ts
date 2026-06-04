@@ -191,6 +191,21 @@ export const api = {
       body: JSON.stringify({ paused }),
     });
   },
+  stop() {
+    return request<{ ok: true }>("/api/control/stop", { method: "POST" });
+  },
+  resume() {
+    return request<{ ok: true }>("/api/control/resume", { method: "POST" });
+  },
+  toggleFullscreen(on?: boolean) {
+    return request<{ ok: true; fullscreen: boolean }>(
+      "/api/control/fullscreen",
+      {
+        method: "POST",
+        body: JSON.stringify(typeof on === "boolean" ? { on } : {}),
+      },
+    );
+  },
   setVolume(volume: number) {
     return request<{ ok: true; volume: number }>("/api/control/volume", {
       method: "POST",

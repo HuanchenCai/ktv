@@ -1,9 +1,32 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { api } from "../lib/api";
+import { onWs } from "../lib/ws";
 
 const volume = ref(80);
 const lastAction = ref("");
+const paused = ref(false);
+const playing = ref(false);
+
+let unsub: (() => void) | null = null;
+onMounted(() => {
+  unsub = onWs((m) => {
+    if (m.type === "player.state") {
+      const p = m.payload as { playing?: boolean; paused?: boolean };
+      if (typeof p.playing === "boolean") playing.value = p.playing;
+      if (typeof p.paused === "boolean") paused.value = p.paused;
+    }
+  });
+  // Initial fetch so the button labels are right even before WS fires.
+  api
+    .player()
+    .then((p) => {
+      paused.value = !!p.paused;
+      playing.value = !!p.current_song;
+    })
+    .catch(() => {});
+});
+onUnmounted(() => unsub?.());
 
 // 3-band EQ: -12..+12 dB. Default flat (0/0/0). Pushed to mpv lazily —
 // nothing happens until the user moves a slider.
@@ -30,6 +53,20 @@ const doToggle = () => flash("切声道", () => api.toggleVocal());
 const doReopen = () => flash("重开视频", () => api.reopen());
 const setChan = (c: "L" | "R" | "both") =>
   flash(`声道 ${c}`, () => api.setChannel(c));
+
+const doPauseToggle = () => {
+  const next = !paused.value;
+  paused.value = next;
+  return flash(next ? "暂停" : "继续", () => api.pause(next));
+};
+const doStop = () =>
+  flash("停止", async () => {
+    playing.value = false;
+    paused.value = false;
+    await api.stop();
+  });
+const doExitFullscreen = () =>
+  flash("退出全屏", () => api.toggleFullscreen(false));
 // Trailing-edge throttle: send at most one IPC per ~80 ms, but also
 // guarantee the LAST value the user picked actually goes through —
 // a fast drag that ends within the window otherwise drops its final
@@ -98,6 +135,31 @@ async function resetEq() {
     <button class="btn-primary w-full py-3 text-base font-semibold" @click="doToggle">
       🎙 切原唱 / 伴唱
     </button>
+
+    <!-- Playback transport: pause/resume + stop + exit fullscreen -->
+    <div class="grid grid-cols-3 gap-2">
+      <button
+        class="rounded-full py-2 text-sm font-semibold text-white transition-all active:scale-[0.96]"
+        style="background: linear-gradient(135deg, #6366f1, #8b5cf6); box-shadow: 0 0 14px rgba(139,92,246,0.40), inset 0 1px 0 rgba(255,255,255,0.18)"
+        @click="doPauseToggle"
+      >
+        {{ paused ? "▶ 继续" : "⏸ 暂停" }}
+      </button>
+      <button
+        class="rounded-full py-2 text-sm font-semibold text-white transition-all active:scale-[0.96]"
+        style="background: rgba(244,63,94,0.18); border: 1px solid rgba(244,63,94,0.45); color: #fda4af"
+        @click="doStop"
+      >
+        ⏹ 停止
+      </button>
+      <button
+        class="rounded-full py-2 text-xs font-medium text-white/85 transition-all active:scale-[0.96]"
+        style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08)"
+        @click="doExitFullscreen"
+      >
+        🗗 退出全屏
+      </button>
+    </div>
 
     <!-- Channel select: 3 pills in a segmented bar -->
     <div class="grid grid-cols-3 gap-2">

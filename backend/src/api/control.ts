@@ -85,6 +85,26 @@ export async function registerControlRoutes(
     return { ok: true, low, mid, high };
   });
 
+  fastify.post("/api/control/stop", async () => {
+    await orchestrator.stopPlayback();
+    return { ok: true };
+  });
+
+  fastify.post("/api/control/resume", async () => {
+    await orchestrator.resumePlayback();
+    return { ok: true };
+  });
+
+  fastify.post<{ Body: { on?: boolean } }>(
+    "/api/control/fullscreen",
+    async (req) => {
+      const cur = await mpv.isFullscreen();
+      const next = typeof req.body?.on === "boolean" ? req.body.on : !cur;
+      await mpv.setFullscreen(next);
+      return { ok: true, fullscreen: next };
+    },
+  );
+
   fastify.get("/api/player", async () => {
     const state = await mpv.getState();
     return {

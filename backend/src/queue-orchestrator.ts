@@ -62,6 +62,22 @@ export class Orchestrator extends EventEmitter {
   /** vocal_channel of whatever's currently loaded in mpv (real or filler). */
   private currentVocalChannel: "L" | "R" = "L";
   /**
+   * True while a remote stream (YouTube / Douyin) is loaded. Those are
+   * regular stereo files, not KTV vocal-on-one-channel encodes, so the
+   * "切原唱/伴奏" L/R split makes the audio half-disappear. Force "both"
+   * via applyChannelDecision while this is set.
+   */
+  private currentIsOnline = false;
+  /**
+   * User explicitly hit "停止" (or closed the mpv window). Stays true
+   * until the user enqueues a new song or hits resume — while it's set,
+   * maybeAutoPlay and maybeStartIdleFallback both short-circuit so the
+   * TV genuinely goes back to the desktop instead of immediately
+   * starting a filler. enqueue() clears it (the user picking a song is
+   * an unambiguous "play again" signal).
+   */
+  private userStopped = false;
+  /**
    * Race guard for skipCurrent. mpv.stop() emits a "stopped" event
    * asynchronously; by the time it arrives we may have already loaded the
    * next song via maybeAutoPlay(). Without this flag, the stale stop event
@@ -176,6 +192,8 @@ export class Orchestrator extends EventEmitter {
     addedBy: string | null,
     opts?: { top?: boolean },
   ): QueueItem {
+    // User actively picking a song is an unambiguous "play again" intent.
+    this.userStopped = false;
     const song = this.db
       .prepare("SELECT * FROM songs WHERE id = ?")
       .get(songId) as Song | undefined;
@@ -227,6 +245,12 @@ export class Orchestrator extends EventEmitter {
     this.db.prepare("DELETE FROM queue WHERE id = ?").run(queueId);
     this.compactPositions();
     this.emit("queue.updated");
+    // The head we just popped (or one in front of it) may have been the
+    // reason maybeAutoPlay was a no-op last time. Re-kick the scheduler.
+    // Also re-schedule downloads in case the new head is a Baidu row
+    // that nobody asked to fetch yet.
+    void this.scheduleDownloads().catch(() => {});
+    void this.maybeAutoPlay().catch(() => {});
   }
 
   /**
@@ -426,6 +450,12 @@ export class Orchestrator extends EventEmitter {
       await this.mpv.setChannel(this.currentVocalChannel);
       return;
     }
+    if (this.currentIsOnline) {
+      // Remote streams are normal stereo; splitting L vs R would silence
+      // half the mix. Always play both channels.
+      await this.mpv.setChannel("both");
+      return;
+    }
     let ch: "L" | "R" | "both";
     if (this.lastChannel === "auto-accompaniment") {
       ch = this.currentVocalChannel === "L" ? "R" : "L";
@@ -436,6 +466,7 @@ export class Orchestrator extends EventEmitter {
   }
 
   private async maybeAutoPlay(): Promise<void> {
+    if (this.userStopped) return;
     // If a real queue song is playing, do nothing. Filler is OK to
     // displace if the queue head is now playable.
     if (this.currentSongId !== null) return;
@@ -493,6 +524,7 @@ export class Orchestrator extends EventEmitter {
 
     this.currentSongId = song.id;
     this.currentVocalChannel = song.vocal_channel;
+    this.currentIsOnline = isOnline;
     // Promoting from filler → real song; clear the flag so onTrackEnded
     // treats the next end-of-file as a real-song completion.
     this.fillerActive = false;
@@ -509,6 +541,39 @@ export class Orchestrator extends EventEmitter {
       return;
     }
     this.broadcastPlayerState();
+  }
+
+  /**
+   * "Stop everything" — what the user means by 停止. Closes the file in
+   * mpv (--idle=yes + no --force-window means the window goes away on
+   * Windows, the desktop is visible again) and flips userStopped so the
+   * automatic filler doesn't immediately start another song. The user's
+   * next enqueue clears the flag.
+   */
+  async stopPlayback(): Promise<void> {
+    this.userStopped = true;
+    this.armSkipGuard();
+    try {
+      await this.mpv.stop();
+    } catch {
+      /* ignore */
+    }
+    this.currentSongId = null;
+    this.fillerActive = false;
+    this.currentIsOnline = false;
+    this.broadcastPlayerState();
+  }
+
+  /**
+   * Inverse of stopPlayback — user hit 继续 while there's still
+   * something in the queue (or filler is wanted). enqueue() handles the
+   * typical case (queue something → it plays); this is for the rare
+   * "queue isn't empty but we explicitly want to come back" path.
+   */
+  async resumePlayback(): Promise<void> {
+    this.userStopped = false;
+    await this.maybeAutoPlay();
+    await this.maybeStartIdleFallback();
   }
 
   /**
@@ -646,6 +711,7 @@ export class Orchestrator extends EventEmitter {
    * playable in the meantime, maybeAutoPlay promotes it.
    */
   private async maybeStartIdleFallback(): Promise<void> {
+    if (this.userStopped) return;
     if (this.currentSongId !== null || this.fillerActive) return;
     // If the queue head IS playable now, the regular advance path will
     // handle it via task_done / maybeAutoPlay — don't override.
