@@ -5,6 +5,7 @@ import { api, type Song } from "../lib/api";
 import SongRow from "./SongRow.vue";
 import PopularArtistsRail from "./PopularArtistsRail.vue";
 import ArtistTile from "./ArtistTile.vue";
+import OnlineList from "./OnlineList.vue";
 void RouterLink; // referenced in template
 
 type ArtistRow = { artist: string; count: number; portrait: string | null };
@@ -40,7 +41,7 @@ const sort = ref<SortMode>("popular");
 // to drill into their songs). Lets the user pick a singer first instead
 // of always landing on the heat list. Persisted in URL ?mode= so the
 // browser back button works.
-type ListMode = "popular" | "artists";
+type ListMode = "popular" | "artists" | "online";
 const mode = ref<ListMode>("popular");
 const artists = ref<ArtistRow[]>([]);
 const artistsLoading = ref(false);
@@ -126,11 +127,13 @@ function setMode(m: ListMode) {
   clearArtistDebounce();
   const query = { ...route.query };
   if (m === "artists") query.mode = "artists";
+  else if (m === "online") query.mode = "online";
   else delete query.mode;
   delete query.artist;
   router.replace({ path: route.path, query });
   if (m === "artists") loadArtists();
-  else run("");
+  else if (m === "popular") run("");
+  // online mode: OnlineList component owns its own fetches
 }
 
 onMounted(async () => {
@@ -139,6 +142,7 @@ onMounted(async () => {
   const fromUrl = (route.query.artist as string | undefined) ?? null;
   if (fromUrl) selectedArtist.value = fromUrl;
   if (route.query.mode === "artists") mode.value = "artists";
+  else if (route.query.mode === "online") mode.value = "online";
   // Skip the heat-search song fetch when we're going to render the
   // artist grid anyway — its results are unused in that view.
   const inArtistGrid =
@@ -236,17 +240,28 @@ async function add(song: Song, top: boolean) {
 
 <template>
   <div class="space-y-4">
-    <!-- Mode toggle: a sliding pill instead of two filled buttons. -->
-    <div class="relative grid grid-cols-2 p-1 rounded-full backdrop-blur-md"
-         style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06)"
+    <!-- Mode toggle: 3-way sliding pill (popular / artists / online). -->
+    <div
+      class="relative grid grid-cols-3 p-1 rounded-full backdrop-blur-md"
+      style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06)"
     >
-      <!-- Sliding indicator -->
       <span
-        class="absolute top-1 bottom-1 left-1 w-[calc(50%-0.25rem)] rounded-full transition-transform duration-300 ease-out"
+        class="absolute top-1 bottom-1 left-1 w-[calc(33.333%-0.166rem)] rounded-full transition-transform duration-300 ease-out"
         :style="{
-          transform: mode === 'artists' ? 'translateX(100%)' : 'translateX(0)',
-          background: 'linear-gradient(135deg, #ff2e6b, #d946ef)',
-          boxShadow: '0 0 20px rgba(255,46,107,0.45), inset 0 1px 0 rgba(255,255,255,0.2)'
+          transform:
+            mode === 'artists'
+              ? 'translateX(100%)'
+              : mode === 'online'
+                ? 'translateX(200%)'
+                : 'translateX(0)',
+          background:
+            mode === 'online'
+              ? 'linear-gradient(135deg, #06b6d4, #8b5cf6)'
+              : 'linear-gradient(135deg, #ff2e6b, #d946ef)',
+          boxShadow:
+            mode === 'online'
+              ? '0 0 20px rgba(34,211,238,0.45), inset 0 1px 0 rgba(255,255,255,0.2)'
+              : '0 0 20px rgba(255,46,107,0.45), inset 0 1px 0 rgba(255,255,255,0.2)',
         }"
       ></span>
       <button
@@ -261,11 +276,22 @@ async function add(song: Song, top: boolean) {
         :class="mode === 'artists' ? 'text-white' : 'text-white/55'"
         @click="setMode('artists')"
       >
-        🎤 按歌手
+        🎤 歌手
+      </button>
+      <button
+        class="relative z-10 py-2 text-sm font-medium transition-colors"
+        :class="mode === 'online' ? 'text-white' : 'text-white/55'"
+        @click="setMode('online')"
+      >
+        🌐 线上
       </button>
     </div>
 
+    <!-- Online mode hands the rest of the screen to its own component. -->
+    <OnlineList v-if="mode === 'online'" />
+
     <input
+      v-if="mode !== 'online'"
       v-model="q"
       class="input"
       :placeholder="
@@ -281,22 +307,27 @@ async function add(song: Song, top: boolean) {
     <!-- Rail only on popular mode without active query/filter; gets in
          the way when the user is actively searching or drilling. -->
     <PopularArtistsRail
-      v-if="showRail"
+      v-if="showRail && mode !== 'online'"
       :size="variant === 'card' ? 'hero' : 'compact'"
     />
 
     <button
-      v-if="selectedArtist"
+      v-if="selectedArtist && mode !== 'online'"
       class="chip chip-active"
       @click="selectArtist(null)"
     >
       × 清除筛选 {{ selectedArtist }}
     </button>
 
-    <div v-if="error" class="text-red-400 text-sm">{{ error }}</div>
+    <div
+      v-if="error && mode !== 'online'"
+      class="text-red-400 text-sm"
+    >
+      {{ error }}
+    </div>
 
     <div
-      v-if="mode !== 'artists' || selectedArtist"
+      v-if="mode !== 'online' && (mode !== 'artists' || selectedArtist)"
       class="flex items-center justify-between gap-2 flex-wrap pt-1"
     >
       <h2 class="text-lg font-bold tracking-tight">{{ heading }}</h2>
@@ -318,7 +349,12 @@ async function add(song: Song, top: boolean) {
       </div>
     </div>
 
-    <div v-if="loading && !songs.length" class="text-muted text-sm">加载中...</div>
+    <div
+      v-if="loading && !songs.length && mode !== 'online'"
+      class="text-muted text-sm"
+    >
+      加载中...
+    </div>
 
     <!-- Artist grid (only in "artists" mode without a chosen artist).
          Tapping one drills into selectedArtist and the grid hides. -->
@@ -352,7 +388,7 @@ async function add(song: Song, top: boolean) {
     </div>
 
     <ul
-      v-if="(mode !== 'artists' || selectedArtist) && songs.length && variant === 'row'"
+      v-if="mode !== 'online' && (mode !== 'artists' || selectedArtist) && songs.length && variant === 'row'"
       class="space-y-2"
     >
       <SongRow
@@ -368,7 +404,7 @@ async function add(song: Song, top: boolean) {
     </ul>
 
     <ul
-      v-else-if="(mode !== 'artists' || selectedArtist) && songs.length"
+      v-else-if="mode !== 'online' && (mode !== 'artists' || selectedArtist) && songs.length"
       class="grid gap-3"
       :class="gridClass"
     >
@@ -385,7 +421,7 @@ async function add(song: Song, top: boolean) {
     </ul>
 
     <div
-      v-else-if="(mode !== 'artists' || selectedArtist) && !loading && q"
+      v-else-if="mode !== 'online' && (mode !== 'artists' || selectedArtist) && !loading && q"
       class="text-center text-muted text-sm mt-12 space-y-2"
     >
       <div class="text-3xl">🤔</div>
@@ -394,7 +430,7 @@ async function add(song: Song, top: boolean) {
     </div>
 
     <div
-      v-else-if="(mode !== 'artists' || selectedArtist) && !loading && !songs.length"
+      v-else-if="mode !== 'online' && (mode !== 'artists' || selectedArtist) && !loading && !songs.length"
       class="text-center text-muted text-sm mt-12 space-y-2"
     >
       <div class="text-3xl">📀</div>

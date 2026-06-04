@@ -1,3 +1,13 @@
+export type OnlineResult = {
+  source: "yt" | "dy";
+  video_id: string;
+  url: string;
+  title: string;
+  channel: string | null;
+  duration_seconds: number | null;
+  thumbnail: string | null;
+};
+
 export type Song = {
   id: number;
   title: string;
@@ -368,6 +378,41 @@ export const api = {
   organizeAbort() {
     return request<{ aborted: true }>("/api/admin/organize/abort", {
       method: "POST",
+    });
+  },
+  onlineStatus() {
+    return request<{
+      enabled: boolean;
+      youtube_enabled: boolean;
+      douyin_enabled: boolean;
+      yt_dlp_installed: boolean;
+      yt_dlp_path: string | null;
+    }>("/api/online/status");
+  },
+  onlineSearch(source: "yt" | "dy", query: string, limit = 20) {
+    return request<{ results: OnlineResult[] }>("/api/online/search", {
+      method: "POST",
+      body: JSON.stringify({ source, query, limit }),
+    });
+  },
+  onlineHot(source: "yt" | "dy", limit = 50) {
+    return request<{ results: OnlineResult[] }>("/api/online/hot", {
+      method: "POST",
+      body: JSON.stringify({ source, limit }),
+    });
+  },
+  onlineEnqueue(opts: {
+    source: "yt" | "dy";
+    video_id: string;
+    title: string;
+    channel?: string | null;
+    duration_seconds?: number | null;
+    thumbnail?: string | null;
+    top?: boolean;
+  }) {
+    return request<{ queued: unknown }>("/api/online/enqueue", {
+      method: "POST",
+      body: JSON.stringify(opts),
     });
   },
   cleanupEmptyDirs(apply: boolean) {

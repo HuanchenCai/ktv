@@ -17,6 +17,12 @@ import { Scanner } from "./scanner.ts";
 import { DownloadManager } from "./download-manager.ts";
 import { registerSongsRoutes } from "./api/songs.ts";
 import { registerQueueRoutes } from "./api/queue.ts";
+import { registerOnlineRoutes } from "./api/online.ts";
+import {
+  resolveDirectUrl as resolveOnlineDirectUrl,
+  parseCloudPath as parseOnlineCloudPath,
+  watchUrlFor as onlineWatchUrl,
+} from "./online-source.ts";
 import { registerControlRoutes } from "./api/control.ts";
 import { registerAdminRoutes } from "./api/admin.ts";
 import { startQrFloater, type FloaterHandle } from "./qr-floater.ts";
@@ -272,6 +278,14 @@ async function main() {
     prefetchAhead: config.scheduler.prefetch_ahead,
     pollIntervalMs: config.scheduler.poll_interval_ms,
     baiduRoot: config.baidu_root,
+    resolveOnlineUrl: async (cloudPath: string) => {
+      const parsed = parseOnlineCloudPath(cloudPath);
+      if (!parsed) throw new Error(`not an online cloud_path: ${cloudPath}`);
+      return resolveOnlineDirectUrl(
+        config.online,
+        onlineWatchUrl(parsed.source, parsed.videoId),
+      );
+    },
   });
   orchestrator.start();
 
@@ -336,6 +350,7 @@ async function main() {
 
   await registerSongsRoutes(fastify, db);
   await registerQueueRoutes(fastify, orchestrator);
+  await registerOnlineRoutes(fastify, db, orchestrator, config.online);
   await registerControlRoutes(fastify, orchestrator, mpv);
   // Static serve cached portraits (data/portraits/<sha>.{jpg,png,...}).
   // Wikidata/Wikipedia images are CC-BY/CC-BY-SA — attribution lives on the

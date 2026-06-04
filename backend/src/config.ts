@@ -72,6 +72,34 @@ const ConfigSchema = z.object({
       margin: z.number().int().min(0).max(200).default(24),
     })
     .default({}),
+  /**
+   * Online video sources (YouTube / Douyin via yt-dlp). When enabled,
+   * `🌐 线上` mode shows up in the phone search UI: type a query,
+   * tap a result, and the video streams from the original CDN
+   * straight into mpv — nothing is downloaded.
+   *
+   * proxy: HTTP proxy URL for yt-dlp + mpv (empty = direct connection).
+   *        Mostly relevant for users behind GFW who need YouTube.
+   * yt_dlp_path: explicit path to the yt-dlp binary. Empty = auto-detect
+   *              on PATH. Install via `winget install yt-dlp.yt-dlp` /
+   *              `brew install yt-dlp` / `pip install yt-dlp`.
+   */
+  online: z
+    .object({
+      enabled: z.boolean().default(true),
+      youtube_enabled: z.boolean().default(true),
+      douyin_enabled: z.boolean().default(true),
+      proxy: z.string().default(""),
+      yt_dlp_path: z.string().default(""),
+      search_timeout_ms: z.number().int().min(2000).max(60000).default(15000),
+      resolve_timeout_ms: z
+        .number()
+        .int()
+        .min(2000)
+        .max(60000)
+        .default(10000),
+    })
+    .default({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

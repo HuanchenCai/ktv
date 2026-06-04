@@ -81,6 +81,10 @@ export class Orchestrator extends EventEmitter {
       prefetchAhead: number;
       pollIntervalMs: number;
       baiduRoot: string;
+      /** Resolver for online:// cloud_paths → direct mpv-playable URL.
+       *  Optional: when missing, online rows are skipped (logged + popped
+       *  from the queue so playback doesn't stall). */
+      resolveOnlineUrl?: (cloudPath: string) => Promise<string>;
     },
   ) {
     super();
@@ -387,6 +391,9 @@ export class Orchestrator extends EventEmitter {
         .get(song_id) as Song | undefined;
       if (!song) continue;
       if (song.cached) continue;
+      // Online rows stream straight from the source; DownloadManager has no
+      // business pulling them.
+      if (song.cloud_path.startsWith("online://")) continue;
       songsToFetch.push(song);
     }
     if (songsToFetch.length === 0) return;
@@ -443,15 +450,45 @@ export class Orchestrator extends EventEmitter {
     const song = this.db
       .prepare("SELECT * FROM songs WHERE id = ?")
       .get(head.song_id) as Song;
-    if (!song.cached || !song.local_path) return;
-    if (!existsSync(song.local_path)) {
-      console.warn(
-        `[orchestrator] local_path missing on disk: ${song.local_path} — marking cache=0`,
-      );
-      this.db
-        .prepare("UPDATE songs SET cached=0, local_path=NULL WHERE id = ?")
-        .run(song.id);
-      return;
+    const isOnline = song.cloud_path.startsWith("online://");
+
+    let playablePath: string | null = null;
+    if (isOnline) {
+      if (!this.opts.resolveOnlineUrl) {
+        console.warn(
+          `[orchestrator] online song queued but no resolver wired: ${song.cloud_path}`,
+        );
+        return;
+      }
+      try {
+        playablePath = await this.opts.resolveOnlineUrl(song.cloud_path);
+      } catch (err) {
+        console.error(
+          `[orchestrator] failed to resolve online URL for song ${song.id}:`,
+          err,
+        );
+        // Pop it from the queue so the next song can advance — leaving
+        // an unresolvable head in place would stall everything.
+        const qh = this.db
+          .prepare("SELECT id FROM queue ORDER BY position ASC LIMIT 1")
+          .get() as { id: number } | undefined;
+        if (qh) this.removeQueueItem(qh.id);
+        // Let the rest of the queue try.
+        void this.maybeAutoPlay().catch(() => {});
+        return;
+      }
+    } else {
+      if (!song.cached || !song.local_path) return;
+      if (!existsSync(song.local_path)) {
+        console.warn(
+          `[orchestrator] local_path missing on disk: ${song.local_path} — marking cache=0`,
+        );
+        this.db
+          .prepare("UPDATE songs SET cached=0, local_path=NULL WHERE id = ?")
+          .run(song.id);
+        return;
+      }
+      playablePath = song.local_path;
     }
 
     this.currentSongId = song.id;
@@ -465,7 +502,7 @@ export class Orchestrator extends EventEmitter {
       )
       .run(Date.now(), song.id);
     try {
-      await this.mpv.loadFile(song.local_path, song.vocal_channel);
+      await this.mpv.loadFile(playablePath, song.vocal_channel);
     } catch (err) {
       console.error("[orchestrator] mpv.loadFile failed", err);
       this.currentSongId = null;
