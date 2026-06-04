@@ -224,9 +224,13 @@ export async function hotlist(
     throw new Error("Douyin is disabled in config");
   }
   const cappedLimit = Math.min(Math.max(1, limit), 50);
+  // YouTube removed the public /feed/trending playlist (yt-dlp now gets
+  // a 404 / homepage redirect on it). Use a popular-music search as the
+  // closest stand-in — surfaces the same set the Trending Music tab
+  // would have done. Douyin's /hot still works, kept as-is.
   const target =
     source === "yt"
-      ? "https://www.youtube.com/feed/trending"
+      ? `ytsearch${cappedLimit}:popular music video`
       : "https://www.douyin.com/hot";
   const args = [
     target,

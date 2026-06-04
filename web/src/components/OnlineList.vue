@@ -24,6 +24,14 @@ async function loadStatus() {
 }
 
 async function loadHot() {
+  // yt-dlp doesn't expose a Douyin trending/search feed, so the only
+  // valid path in 抖音 mode is "paste a video URL". Skip the auto-hot
+  // call and clear results so the user sees the empty-state prompt.
+  if (source.value === "dy") {
+    results.value = [];
+    mode.value = "hot";
+    return;
+  }
   loading.value = true;
   error.value = "";
   try {
@@ -139,7 +147,11 @@ const showInstallHint = computed(
     <input
       v-model="q"
       class="input"
-      placeholder="搜在线视频，留空看热榜"
+      :placeholder="
+        source === 'dy'
+          ? '粘贴抖音视频链接（v.douyin.com / douyin.com/video/...）'
+          : '搜在线视频，留空看热门'
+      "
       autocomplete="off"
       spellcheck="false"
       inputmode="search"
@@ -159,7 +171,13 @@ const showInstallHint = computed(
 
     <div class="flex items-center justify-between gap-2 pt-1">
       <h2 class="text-lg font-bold tracking-tight">
-        {{ mode === "hot" ? (source === "yt" ? "YouTube 热榜" : "抖音热榜") : "搜索结果" }}
+        {{
+          source === "dy"
+            ? "粘贴抖音链接"
+            : mode === "hot"
+              ? "YouTube 热门音乐"
+              : "搜索结果"
+        }}
       </h2>
       <span v-if="results.length" class="text-white/40 text-xs tabular-nums">
         {{ results.length }}
@@ -258,7 +276,11 @@ const showInstallHint = computed(
       class="text-center text-white/45 text-sm py-12 space-y-2"
     >
       <div class="text-3xl">🌐</div>
-      <div>没找到</div>
+      <div v-if="source === 'dy'">
+        抖音不支持搜索<br />
+        请在抖音 app 复制视频链接粘进上方
+      </div>
+      <div v-else>没找到</div>
     </div>
   </div>
 </template>
