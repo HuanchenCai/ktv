@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref, watch, computed } from "vue";
+import { onMounted, onUnmounted, ref, watch, computed } from "vue";
 import { api, type OnlineResult } from "../lib/api";
+import { onWs } from "../lib/ws";
 
 const source = ref<"yt" | "dy">("yt");
 const q = ref("");
@@ -85,10 +86,35 @@ async function pickResult(r: OnlineResult, top = false) {
   }
 }
 
+// Keep the "已点" badges in sync with the REAL queue: an online song's badge
+// must clear once it has played (or been skipped) and left the queue. We
+// rebuild queuedIds from the queue (online:// rows) on load and on every
+// queue.updated event — local optimistic add in pickResult is just for snappy
+// feedback until this reconciles.
+async function syncQueue() {
+  try {
+    const { items } = await api.listQueue();
+    const s = new Set<string>();
+    for (const it of items) {
+      const cp = it.song?.cloud_path || "";
+      if (cp.startsWith("online://")) s.add(cp.slice("online://".length));
+    }
+    queuedIds.value = s;
+  } catch {
+    /* ignore */
+  }
+}
+
+let unsubQueue: (() => void) | null = null;
 onMounted(async () => {
   await loadStatus();
   await loadHot();
+  await syncQueue();
+  unsubQueue = onWs((m) => {
+    if (m.type === "queue.updated") void syncQueue();
+  });
 });
+onUnmounted(() => unsubQueue?.());
 
 watch(source, () => {
   q.value = "";
@@ -115,8 +141,10 @@ const showInstallHint = computed(
 
 <template>
   <div class="space-y-4">
-    <!-- Source toggle (YouTube / Douyin) — sliding pill -->
+    <!-- Source toggle (YouTube / Douyin) — sliding pill. Hidden when Douyin
+         is disabled (only YouTube left, nothing to switch). -->
     <div
+      v-if="status?.douyin_enabled"
       class="relative grid grid-cols-2 p-1 rounded-full backdrop-blur-md"
       style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06)"
     >

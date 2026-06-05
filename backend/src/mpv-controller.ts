@@ -119,6 +119,24 @@ export class MpvController extends EventEmitter {
    */
   private loading = false;
   private loadingTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Re-asserts fullscreen every ~250ms from loadFile() until "started". For
+   * streamed online (YouTube) songs there's a buffer/connect gap during which
+   * mpv drops out of fullscreen to the desktop, snapping back only once the
+   * stream begins. Setting fullscreen=true repeatedly (a no-op when already
+   * on) keeps the window pinned through that gap so there's no flash.
+   */
+  private fsBurstTimer: ReturnType<typeof setInterval> | null = null;
+  private fsBurstStop: ReturnType<typeof setTimeout> | null = null;
+  /** Synchronous mirror of mpv's pause state, kept current via the
+   *  paused/resumed/started events + loadFile, so player.state broadcasts
+   *  can report it without an async getProperty round-trip. */
+  private pausedState = false;
+
+  /** Current pause state (synchronous). */
+  isPaused(): boolean {
+    return this.pausedState;
+  }
 
   constructor(opts: {
     vocalChannelDefault: "L" | "R";
@@ -248,10 +266,27 @@ export class MpvController extends EventEmitter {
       }
       void this.detectAudioMode().catch(() => {});
       void this.applyQrOverlay().catch(() => {});
+      // Re-assert fullscreen now that playback has actually started. Setting it
+      // in loadFile() right after load() is too early for streamed online URLs
+      // (the surface isn't ready yet), so a 切歌 to/from a YouTube song could
+      // drop out of fullscreen. Doing it on "started" covers both cases.
+      if (this.fullscreen && this.mpv) {
+        void Promise.resolve(this.mpv.setProperty("fullscreen", true)).catch(
+          () => {},
+        );
+      }
+      this.stopFsBurst();
+      this.pausedState = false;
       this.emit("track-started", { channel: this.currentChannel });
     });
-    this.mpv.on("resumed", () => this.emit("resumed"));
-    this.mpv.on("paused", () => this.emit("paused"));
+    this.mpv.on("resumed", () => {
+      this.pausedState = false;
+      this.emit("resumed");
+    });
+    this.mpv.on("paused", () => {
+      this.pausedState = true;
+      this.emit("paused");
+    });
     this.startEofPoller();
     this.ready = true;
     console.log("[mpv] ready");
@@ -377,6 +412,7 @@ export class MpvController extends EventEmitter {
     // but stay paused.
     try {
       await Promise.resolve(this.mpv.setProperty("pause", false));
+      this.pausedState = false;
     } catch {
       /* ignore */
     }
@@ -391,8 +427,37 @@ export class MpvController extends EventEmitter {
       } catch {
         /* ignore */
       }
+      this.startFsBurst();
     }
     this.currentChannel = "both";
+  }
+
+  /** Keep re-asserting fullscreen until "started" (or 8s max) — closes the
+   *  online-stream buffering gap where mpv drops to the desktop. */
+  private startFsBurst(): void {
+    this.stopFsBurst();
+    this.fsBurstTimer = setInterval(() => {
+      if (!this.mpv) return;
+      try {
+        void Promise.resolve(this.mpv.setProperty("fullscreen", true)).catch(
+          () => {},
+        );
+      } catch {
+        /* ignore */
+      }
+    }, 250);
+    this.fsBurstStop = setTimeout(() => this.stopFsBurst(), 8000);
+  }
+
+  private stopFsBurst(): void {
+    if (this.fsBurstTimer) {
+      clearInterval(this.fsBurstTimer);
+      this.fsBurstTimer = null;
+    }
+    if (this.fsBurstStop) {
+      clearTimeout(this.fsBurstStop);
+      this.fsBurstStop = null;
+    }
   }
 
   /** Toggle/set mpv's fullscreen state directly. */
@@ -474,10 +539,12 @@ export class MpvController extends EventEmitter {
 
   async pause(): Promise<void> {
     this.mpv?.pause();
+    this.pausedState = true;
   }
 
   async resume(): Promise<void> {
     this.mpv?.resume();
+    this.pausedState = false;
   }
 
   async seekTo(seconds: number): Promise<void> {
@@ -570,6 +637,7 @@ export class MpvController extends EventEmitter {
   }
 
   async shutdown(): Promise<void> {
+    this.stopFsBurst();
     if (this.eofPoller) {
       clearInterval(this.eofPoller);
       this.eofPoller = null;

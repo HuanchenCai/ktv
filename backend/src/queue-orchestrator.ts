@@ -19,6 +19,7 @@ export type OrchestratorEvents = {
   "player.state": (state: {
     current_song: Song | null;
     playing: boolean;
+    paused: boolean;
     vocal_channel: "L" | "R" | "both";
   }) => void;
 };
@@ -45,6 +46,15 @@ export class Orchestrator extends EventEmitter {
    * "real" current song from the queue.
    */
   private fillerActive = false;
+  /**
+   * Artist + id of the last song loaded (real or filler). Idle filler plays
+   * OTHER songs by `lastArtist` (a mini same-singer radio) until the queue
+   * resumes; when that artist has no more cached songs it falls back to a
+   * random one — and `lastArtist` then follows whatever played, so the radio
+   * drifts naturally.
+   */
+  private lastArtist: string | null = null;
+  private lastLoadedId: number | null = null;
   private currentChannelState: "L" | "R" | "both" = "both";
   /**
    * The user's remembered channel choice. Carries from one song to the
@@ -540,6 +550,9 @@ export class Orchestrator extends EventEmitter {
       this.currentSongId = null;
       return;
     }
+    // Remember the artist so idle filler can continue with this singer.
+    this.lastArtist = song.artist || null;
+    this.lastLoadedId = song.id;
     this.broadcastPlayerState();
   }
 
@@ -593,7 +606,11 @@ export class Orchestrator extends EventEmitter {
   async skipCurrent(): Promise<void> {
     this.armSkipGuard();
     try {
-      await this.mpv.stop();
+      // Pause (freeze on the current frame, keep fullscreen) rather than stop
+      // (which idles mpv → desktop shows). The next song's loadFile does a
+      // load(replace) + unpause, so for online songs the ~2s resolve gap stays
+      // on the frozen frame instead of flashing the desktop / leaving FS.
+      await this.mpv.pause();
     } catch {
       /* ignore */
     }
@@ -670,6 +687,7 @@ export class Orchestrator extends EventEmitter {
     this.emit("player.state", {
       current_song: this.getCurrentSong(),
       playing: this.currentSongId !== null,
+      paused: this.mpv.isPaused(),
       vocal_channel: this.currentChannelState,
     });
   }
@@ -725,20 +743,44 @@ export class Orchestrator extends EventEmitter {
       | { id: number; cached: number; local_path: string | null }
       | undefined;
     if (head && head.cached === 1 && head.local_path) return;
-    // Random cached song.
-    const filler = this.db
-      .prepare(
-        `SELECT id, local_path, vocal_channel FROM songs
-         WHERE cached = 1 AND local_path IS NOT NULL
-         ORDER BY RANDOM() LIMIT 1`,
-      )
-      .get() as
-      | { id: number; local_path: string; vocal_channel: "L" | "R" }
-      | undefined;
-    if (!filler || !existsSync(filler.local_path)) return;
+
+    type Cand = { id: number; artist: string; local_path: string; vocal_channel: "L" | "R" };
+    const excludeId = this.lastLoadedId ?? -1;
+    // Pick a playable filler: prefer OTHER songs by the last artist (same-singer
+    // radio), then fall back to any random cached song. Pull a handful per
+    // query so a missing file on disk doesn't abort filler entirely.
+    const pick = (sql: string, ...args: Array<string | number>): Cand | null => {
+      const rows = this.db.prepare(sql).all(...args) as unknown as Cand[];
+      for (const r of rows) if (r.local_path && existsSync(r.local_path)) return r;
+      return null;
+    };
+    let filler: Cand | null = null;
+    if (this.lastArtist) {
+      filler = pick(
+        `SELECT id, artist, local_path, vocal_channel FROM songs
+         WHERE cached = 1 AND local_path IS NOT NULL AND artist = ? AND id != ?
+         ORDER BY RANDOM() LIMIT 8`,
+        this.lastArtist,
+        excludeId,
+      );
+    }
+    if (!filler) {
+      // artist has no other cached songs (or none playable) → random any
+      filler = pick(
+        `SELECT id, artist, local_path, vocal_channel FROM songs
+         WHERE cached = 1 AND local_path IS NOT NULL AND id != ?
+         ORDER BY RANDOM() LIMIT 8`,
+        excludeId,
+      );
+    }
+    if (!filler) return;
     try {
       this.fillerActive = true;
       this.currentVocalChannel = filler.vocal_channel;
+      // Follow whatever actually played so the same-singer chain continues
+      // (and drifts to a new artist if we fell back to random).
+      this.lastArtist = filler.artist || null;
+      this.lastLoadedId = filler.id;
       await this.mpv.loadFile(filler.local_path, filler.vocal_channel);
       this.broadcastPlayerState();
     } catch (err) {
