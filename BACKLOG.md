@@ -2,6 +2,15 @@
 
 不急做的事写在这里，后续接着干时直接读这个文件。
 
+## 已知 bug（偶发，暂不急）
+
+### 队列空时点歌偶发播放上一首
+
+- 症状：歌单空了（filler 在放或屏幕停在最后一帧），点一首新歌（尤其 YouTube 在线歌），偶发播放的是之前最后那首而不是新点的。
+- 排查结论（2026-06-05）：单步顺序操作全部正常——点歌→切歌→点新歌、自然放完(EOF parked)→点新歌、filler 中点在线歌，各测 15/15 通过；本地歌的并发 race 也复现不出来。
+- 怀疑根因：`queue-orchestrator.maybeAutoPlay()` 的守卫 `if (currentSongId !== null) return` 在 `await resolveOnlineUrl()`（在线歌要 ~2s）**之前**检查。在线歌解析的 2s 窗口内若有第二次 enqueue/maybeAutoPlay 触发，两个并发调用都会通过守卫、各自 loadFile，造成竞态。
+- 修法方向：给 maybeAutoPlay 加一个「正在加载」互斥锁（loadingInFlight 标志），或在 await 后二次校验 head 仍是同一首再 loadFile。日常单步操作不受影响，所以低优先。
+
 ## 8TB 百度盘整理 — 不全下载就缩成一个干净小库
 
 **目标**：现状 8TB / ~48k 行百度索引，一首一首下载不可行。要按规则筛掉重复 / 低质量，最终只把精选下到 NAS（估 1.5–2TB 量级）。
