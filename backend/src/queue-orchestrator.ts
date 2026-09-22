@@ -40,6 +40,7 @@ export class Orchestrator extends EventEmitter {
   private running = false;
   private currentSongId: number | null = null;
   private loadingInFlight = false;
+  private playbackRequested = false;
   private playbackGeneration = 0;
   /**
    * True when mpv is playing a random cached song as filler because the
@@ -480,12 +481,16 @@ export class Orchestrator extends EventEmitter {
   }
 
   private async maybeAutoPlay(): Promise<void> {
-    if (this.loadingInFlight) return;
+    if (this.loadingInFlight) { this.playbackRequested = true; return; }
     this.loadingInFlight = true;
     try {
       await this.loadQueueHead();
     } finally {
       this.loadingInFlight = false;
+      if (this.playbackRequested) {
+        this.playbackRequested = false;
+        setImmediate(() => void this.maybeAutoPlay().catch(() => {}));
+      }
     }
   }
 
@@ -512,7 +517,9 @@ export class Orchestrator extends EventEmitter {
       (this.db.prepare("SELECT id FROM queue ORDER BY position LIMIT 1").get() as { id: number } | undefined)?.id === head.id;
 
     let playablePath: string | null = null;
-    if (isOnline || isLibrary) {
+    if (song.cached && song.local_path && existsSync(song.local_path)) {
+      playablePath = song.local_path;
+    } else if (isOnline || isLibrary) {
       const resolver = isOnline ? this.opts.resolveOnlineUrl : this.opts.resolveLibraryUrl;
       if (!resolver) {
         console.warn(
@@ -568,6 +575,12 @@ export class Orchestrator extends EventEmitter {
     } catch (err) {
       console.error("[orchestrator] mpv.loadFile failed", err);
       this.currentSongId = null;
+      return;
+    }
+    if (!stillHead()) {
+      this.currentSongId = null;
+      if (this.userStopped) await this.mpv.stop();
+      else this.playbackRequested = true;
       return;
     }
     // Remember the artist so idle filler can continue with this singer.
