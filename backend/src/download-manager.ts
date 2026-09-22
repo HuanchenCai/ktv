@@ -152,41 +152,49 @@ export class DownloadManager extends EventEmitter {
 
   /** Start workers if not already running. Idempotent. */
   start(): void {
-    if (this.running) return;
+    if (this.running || this.active > 0) return;
     this.running = true;
     if (this.ac.signal.aborted) {
       this.ac = new AbortController();
     }
     for (let i = 0; i < this.concurrency; i++) {
-      this.spawnWorker(i + 1);
+      void this.spawnWorker(i + 1, this.ac.signal);
     }
   }
 
   /** Abort all in-flight downloads and stop accepting new work from the queue. */
   abortAll(): void {
     this.ac.abort();
-    this.running = false;
+    for (const task of this.queue) {
+      if (task.state !== "queued") continue;
+      task.state = "failed";
+      task.error = "Download cancelled";
+      task.finishedAt = Date.now();
+      this.emit("task_failed", task);
+    }
+    if (this.active === 0) this.running = false;
   }
 
-  private async spawnWorker(workerId: number): Promise<void> {
+  private async spawnWorker(workerId: number, signal: AbortSignal): Promise<void> {
     this.active++;
     try {
-      while (this.cursor < this.queue.length && !this.ac.signal.aborted) {
+      while (this.cursor < this.queue.length && !signal.aborted) {
         const task = this.queue[this.cursor++];
         if (!task) break;
         if (task.state !== "queued") continue;
-        await this.runOne(task, workerId);
+        await this.runOne(task, workerId, signal);
       }
     } finally {
       this.active--;
       if (this.active === 0) {
         this.running = false;
         this.emit("queue_drained", this.getCounts());
+        if (this.queue.slice(this.cursor).some((task) => task.state === "queued")) this.start();
       }
     }
   }
 
-  private async runOne(task: DownloadTask, workerId: number): Promise<void> {
+  private async runOne(task: DownloadTask, workerId: number, signal: AbortSignal): Promise<void> {
     task.state = "downloading";
     task.startedAt = Date.now();
     this.emit("task_started", task, workerId);
@@ -204,7 +212,7 @@ export class DownloadManager extends EventEmitter {
       for (const cand of candidates) {
         try {
           const st = await stat(cand);
-          if (Math.abs(st.size - task.size_bytes) <= 1024) {
+          if (st.isFile() && (task.cloud_path.startsWith("openlist://") ? st.size === task.size_bytes : Math.abs(st.size - task.size_bytes) <= 1024)) {
             task.state = "skipped";
             task.bytesWritten = st.size;
             task.finishedAt = Date.now();
@@ -224,7 +232,7 @@ export class DownloadManager extends EventEmitter {
     const options = {
       bduss: this.bduss,
       stoken: this.stoken,
-      signal: this.ac.signal,
+      signal,
       expectedSize: task.size_bytes,
       retries: 3,
       onProgress: (written: number, total: number | null) => {

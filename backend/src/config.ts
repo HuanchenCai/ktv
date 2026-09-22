@@ -152,7 +152,7 @@ export function loadConfig(projectRoot?: string): Config {
       data_dir: resolve(root, parsed.openlist.data_dir),
       binary_path: binaryPath,
     },
-    library_path: resolve(parsed.library_path),
+    library_path: resolve(root, parsed.library_path),
   };
 }
 
