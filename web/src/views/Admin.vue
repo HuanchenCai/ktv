@@ -74,7 +74,7 @@ async function runScan() {
   scanning.value = true;
   error.value = "";
   try {
-    const r = await api.scan(3);
+    const r = await api.scan(20);
     scanResult.value = `新增 ${r.inserted}，更新 ${r.updated}，跳过 ${r.skipped}`;
     await refresh();
   } catch (err) {

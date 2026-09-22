@@ -159,7 +159,7 @@ export class Scanner {
       onProgress?: (p: ScanProgress) => void;
     } = {},
   ): Promise<{ inserted: number; updated: number; skipped: number }> {
-    const maxDepth = options.maxDepth ?? 3;
+    const maxDepth = options.maxDepth ?? 20;
     const progress = options.progress ?? ((m) => console.log(`[scan] ${m}`));
 
     let inserted = 0;

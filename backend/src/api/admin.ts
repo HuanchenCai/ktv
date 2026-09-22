@@ -71,7 +71,7 @@ export async function registerAdminRoutes(
     async (req, rep) => {
       try {
         const result = await scanner.scan({
-          maxDepth: req.body?.max_depth ?? 3,
+          maxDepth: req.body?.max_depth ?? 20,
           onProgress: (p) => events?.emit("scan.progress", p),
         });
         return result;
