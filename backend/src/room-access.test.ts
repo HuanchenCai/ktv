@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import websocket from "@fastify/websocket";
 import { registerRoomAccess } from "./room-access.ts";
+import { registerControlRoutes } from "./api/control.ts";
+import type { Orchestrator } from "./queue-orchestrator.ts";
+import type { MpvController } from "./mpv-controller.ts";
 
 const apps: FastifyInstance[] = [];
 afterEach(async () => { await Promise.all(apps.splice(0).map((a) => a.close())); });
@@ -28,6 +31,18 @@ async function login(app: FastifyInstance, code = room.guest_code) {
 }
 
 describe("public room access", () => {
+  it("does not disclose signed media URLs to guests", async () => {
+    const app = Fastify(); apps.push(app);
+    registerRoomAccess(app, room, 8080);
+    await registerControlRoutes(app,
+      { getCurrentSong: () => null } as unknown as Orchestrator,
+      { getState: async () => ({ current_file: "https://nas.example/song?sign=private", position: 3 }) } as unknown as MpvController,
+    );
+    const cookie = await login(app);
+    const state = (await app.inject({ url: "/api/player", headers: { cookie } })).json();
+    expect(state.position).toBe(3);
+    expect(state.current_file).toBeUndefined();
+  });
   it("requires a session even for requests arriving from the local tunnel", async () => {
     const app = await setup();
     expect((await app.inject("/api/songs")).statusCode).toBe(401);
