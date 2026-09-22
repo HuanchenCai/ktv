@@ -1,4 +1,5 @@
-import { createApp } from "vue";
+import { createApp, h } from "vue";
+import RoomGate from "./components/RoomGate.vue";
 import { createRouter, createWebHistory } from "vue-router";
 import "./styles.css";
 import App from "./App.vue";
@@ -42,4 +43,4 @@ router.beforeEach((to) => {
   }
 });
 
-createApp(App).use(router).mount("#app");
+createApp({ render: () => h(RoomGate, null, { default: () => h(App) }) }).use(router).mount("#app");

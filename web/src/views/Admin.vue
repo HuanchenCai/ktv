@@ -164,10 +164,10 @@ async function pickFolder() {
     </div>
 
     <div class="card space-y-2">
-      <div class="font-semibold">扫百度盘入库</div>
+      <div class="font-semibold">扫描云盘 / NAS 曲库</div>
       <div class="text-xs text-muted">
-        首次点一下把百度盘曲库目录扫描入索引。需先在 OpenList 里配好
-        Baidu 存储和 api_token（config.json）。支持增量，可以反复点。
+        从 OpenList 扫描歌曲目录，只保存索引，不下载整库。支持百度云、远程 NAS、WebDAV 等存储；点歌后直接播放远程视频。
+        请先配置 OpenList 地址、曲库目录和访问凭据。支持增量，可以反复点。
       </div>
       <button class="btn-primary" :disabled="scanning" @click="runScan">
         {{ scanning ? "扫描中..." : "开始扫描" }}

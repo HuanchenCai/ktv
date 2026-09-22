@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { EventEmitter } from "node:events";
 import type { Orchestrator } from "./queue-orchestrator.ts";
 import type { DownloadManager, DownloadTask as MgrTask } from "./download-manager.ts";
@@ -33,10 +33,12 @@ export async function registerWs(
   downloads?: DownloadManager,
 ): Promise<void> {
   const clients = new Set<WsLike>();
+  const admins = new Set<WsLike>();
 
   const broadcast = (msg: WsMessage) => {
     const payload = JSON.stringify(msg);
     for (const sock of clients) {
+      if (!admins.has(sock) && !["queue.updated", "download.progress", "player.state"].includes(msg.type)) continue;
       try {
         if (sock.readyState === 1) sock.send(payload);
       } catch {
@@ -83,15 +85,17 @@ export async function registerWs(
     }
   }
 
-  const wsHandler = (sock: WsLike) => {
+  const wsHandler = (sock: WsLike, req: FastifyRequest) => {
     clients.add(sock);
-    sock.on("close", () => clients.delete(sock));
-    sock.on("error", () => clients.delete(sock));
+    if (req.roomRole !== "guest") admins.add(sock);
+    const cleanup = () => { clients.delete(sock); admins.delete(sock); };
+    sock.on("close", cleanup);
+    sock.on("error", cleanup);
     // Initial sync: tell the client to refresh queue + ship the current
     // download manager snapshot so the UI doesn't have to round-trip.
     try {
       sock.send(JSON.stringify({ type: "queue.updated" }));
-      if (downloads) {
+      if (downloads && admins.has(sock)) {
         sock.send(
           JSON.stringify({
             type: "downloads.snapshot",
