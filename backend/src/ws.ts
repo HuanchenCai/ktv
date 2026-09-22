@@ -24,6 +24,7 @@ type WsLike = {
   readyState: number;
   send: (data: string) => void;
   on: (event: string, cb: (...a: unknown[]) => void) => void;
+  close: (code?: number) => void;
 };
 
 export async function registerWs(
@@ -88,7 +89,8 @@ export async function registerWs(
   const wsHandler = (sock: WsLike, req: FastifyRequest) => {
     clients.add(sock);
     if (req.roomRole !== "guest") admins.add(sock);
-    const cleanup = () => { clients.delete(sock); admins.delete(sock); };
+    const expiry = req.roomExpiresAt ? setTimeout(() => sock.close(1008), Math.max(1, req.roomExpiresAt - Date.now())) : null;
+    const cleanup = () => { clients.delete(sock); admins.delete(sock); if (expiry) clearTimeout(expiry); };
     sock.on("close", cleanup);
     sock.on("error", cleanup);
     // Initial sync: tell the client to refresh queue + ship the current

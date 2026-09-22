@@ -410,7 +410,7 @@ async function main() {
       ok: true,
       openlist_up: await openlist.ping(),
       openlist_admin_url: openlistUrl,
-      mpv_ready: !!config.mpv.binary_path || true, // controller warns if unavailable
+      mpv_ready: mpv.isReady(),
       library_path: config.library_path,
       db_songs: songCount,
       db_cached: cachedCount,
@@ -486,6 +486,7 @@ async function main() {
   const shutdown = async () => {
     console.log("\n[main] shutting down ...");
     orchestrator.stop();
+    downloads.abortAll();
     for (const f of qrFloaters) {
       try {
         f.stop();

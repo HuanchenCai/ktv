@@ -138,6 +138,8 @@ export class MpvController extends EventEmitter {
     return this.pausedState;
   }
 
+  isReady(): boolean { return this.ready; }
+
   constructor(opts: {
     vocalChannelDefault: "L" | "R";
     binaryPath?: string;
@@ -387,6 +389,7 @@ export class MpvController extends EventEmitter {
   }
 
   async loadFile(path: string, vocalChannel?: "L" | "R"): Promise<void> {
+    if (!this.ready) await this.start();
     if (!this.mpv) throw new Error("mpv not started");
     if (vocalChannel) this.vocalChannelDefault = vocalChannel;
     // Clear the EOF latch immediately so a poll between load() returning
