@@ -11,6 +11,9 @@
 
 import { EventEmitter } from "node:events";
 import { stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { extname, resolve } from "node:path";
+import { downloadRemote } from "./remote-download.ts";
 import {
   downloadOne,
   mirrorDestPath,
@@ -57,6 +60,7 @@ export type DownloadManagerOpts = {
   rootPrefix?: string;
   concurrency?: number;
   requestDelayMs?: number;
+  resolveLibraryUrl?: (cloudPath: string) => Promise<string>;
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -69,6 +73,7 @@ export class DownloadManager extends EventEmitter {
   private readonly rootPrefix: string;
   private readonly concurrency: number;
   private readonly requestDelayMs: number;
+  private readonly resolveLibraryUrl?: (cloudPath: string) => Promise<string>;
 
   private tasks = new Map<number, DownloadTask>();
   private queue: DownloadTask[] = [];
@@ -87,6 +92,7 @@ export class DownloadManager extends EventEmitter {
     this.rootPrefix = opts.rootPrefix ?? "/KTV/";
     this.concurrency = opts.concurrency ?? 4;
     this.requestDelayMs = opts.requestDelayMs ?? 300;
+    this.resolveLibraryUrl = opts.resolveLibraryUrl;
     this.updateStmt = this.db.prepare(
       "UPDATE songs SET cached = 1, local_path = ? WHERE id = ?",
     );
@@ -117,11 +123,15 @@ export class DownloadManager extends EventEmitter {
   enqueue(rows: SongRow[]): DownloadTask[] {
     const added: DownloadTask[] = [];
     for (const row of rows) {
-      if (this.tasks.has(row.id)) continue;
+      const previous = this.tasks.get(row.id);
+      if (previous && previous.state !== "failed") continue;
+      if (row.cloud_path.startsWith("online://") || row.cloud_path.startsWith("local://")) continue;
       const task: DownloadTask = {
         id: row.id,
         cloud_path: row.cloud_path,
-        dest: artistDestPath(row.cloud_path, row.artist, this.libraryPath),
+        dest: row.cloud_path.startsWith("openlist://")
+          ? resolve(this.libraryPath, "remote", createHash("sha256").update(row.cloud_path).digest("hex") + extname(row.cloud_path))
+          : artistDestPath(row.cloud_path, row.artist, this.libraryPath),
         artist: row.artist,
         title: row.title,
         size_bytes: row.size_bytes,
@@ -189,7 +199,7 @@ export class DownloadManager extends EventEmitter {
     if (task.size_bytes != null) {
       const candidates = [
         task.dest,
-        mirrorDestPath(task.cloud_path, this.libraryPath, this.rootPrefix),
+        ...(task.cloud_path.startsWith("openlist://") ? [] : [mirrorDestPath(task.cloud_path, this.libraryPath, this.rootPrefix)]),
       ];
       for (const cand of candidates) {
         try {
@@ -211,18 +221,29 @@ export class DownloadManager extends EventEmitter {
 
     if (this.requestDelayMs > 0) await sleep(this.requestDelayMs);
 
-    const result = await downloadOne(task.cloud_path, task.dest, {
+    const options = {
       bduss: this.bduss,
       stoken: this.stoken,
       signal: this.ac.signal,
       expectedSize: task.size_bytes,
       retries: 3,
-      onProgress: (written, total) => {
+      onProgress: (written: number, total: number | null) => {
         task.bytesWritten = written;
         task.bytesTotal = total;
         this.emit("task_progress", task);
       },
-    });
+    };
+    const result = await (async () => {
+      try {
+        if (task.cloud_path.startsWith("openlist://")) {
+          if (!this.resolveLibraryUrl) throw new Error("Remote library is not configured");
+          return await downloadRemote(await this.resolveLibraryUrl(task.cloud_path), task.dest, options);
+        }
+        return await downloadOne(task.cloud_path, task.dest, options);
+      } catch (err) {
+        return { ok: false as const, error: err instanceof Error ? err.message : String(err), retryable: true };
+      }
+    })();
 
     task.finishedAt = Date.now();
     if (result.ok) {

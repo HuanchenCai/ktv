@@ -163,7 +163,7 @@ async function main() {
       console.log(`[main] QR for ${url} written to ${qrPath}`);
 
       // Optional WiFi QR — only if SSID configured.
-      if (config.wifi.ssid) {
+      if (config.wifi.ssid && !config.room.public_url) {
         qrWifiPath = resolve(dataDir, "qr-wifi.png");
         const wifiPng = await QRCode.toBuffer(wifiQrPayload(config.wifi), {
           errorCorrectionLevel: "M",
@@ -271,6 +271,7 @@ async function main() {
     libraryPath: config.library_path,
     concurrency: config.baidu.concurrency,
     requestDelayMs: config.baidu.request_delay_ms,
+    resolveLibraryUrl: (cloudPath) => openlist.playbackUrl(cloudPath.slice("openlist://".length)),
   });
 
   // --- Orchestrator ---------------------------------------------------------
