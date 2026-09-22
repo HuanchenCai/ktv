@@ -85,6 +85,7 @@ async function request<T>(
     },
   });
   if (!res.ok) {
+    if (res.status === 401) location.reload();
     const text = await res.text();
     throw new Error(`${res.status}: ${text}`);
   }

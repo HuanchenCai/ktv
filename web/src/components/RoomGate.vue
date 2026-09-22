@@ -1,5 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
+import { roomRole, roomEnabled } from "../lib/session";
+
+const router = useRouter();
+async function enter(role: "admin" | "guest" | null) {
+  roomRole.value = role;
+  if (role === "guest" && ["/admin", "/library"].includes(location.pathname)) await router.replace("/search");
+  ready.value = !!role;
+}
 
 const ready = ref(false);
 const loading = ref(true);
@@ -12,7 +21,8 @@ onMounted(async () => {
     const response = await fetch("/api/session");
     if (!response.ok) throw new Error("无法连接聚会主机，请确认主机和公网入口已启动");
     const session = await response.json();
-    ready.value = !!session.role;
+    roomEnabled.value = session.enabled;
+    await enter(session.role);
   } catch (e) { error.value = String(e); }
   finally { loading.value = false; }
 });
@@ -29,7 +39,7 @@ async function join() {
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || "加入失败");
     code.value = "";
-    ready.value = true;
+    await enter(body.role);
   } catch (e) { error.value = e instanceof Error ? e.message : String(e); }
   finally { busy.value = false; }
 }

@@ -3,6 +3,7 @@ import { onMounted, computed } from "vue";
 import { useRoute, RouterView, RouterLink } from "vue-router";
 import { startWs, wsStatus } from "./lib/ws";
 import MiniPlayer from "./components/MiniPlayer.vue";
+import { roomRole, roomEnabled, leaveRoom } from "./lib/session";
 
 onMounted(() => startWs());
 
@@ -111,6 +112,7 @@ const wsDotClass = computed(() => ({
           📺 主页
         </RouterLink>
         <RouterLink
+          v-if="roomRole === 'admin'"
           to="/library"
           class="hover:text-white transition-colors px-1.5 py-1 rounded"
           active-class="text-white bg-panel"
@@ -125,6 +127,7 @@ const wsDotClass = computed(() => ({
           👤 歌手
         </RouterLink>
         <RouterLink
+          v-if="roomRole === 'admin'"
           to="/admin"
           class="hover:text-white transition-colors px-1.5 py-1 rounded"
           active-class="text-white bg-panel"
@@ -132,6 +135,7 @@ const wsDotClass = computed(() => ({
           ⚙ 管理
         </RouterLink>
       </nav>
+      <button v-if="roomEnabled" class="text-xs text-muted px-2 py-2" @click="leaveRoom">退出房间</button>
     </header>
 
     <main
