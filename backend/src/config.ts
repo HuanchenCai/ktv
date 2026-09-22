@@ -5,6 +5,15 @@ import { platform } from "node:os";
 import { z } from "zod";
 
 const ConfigSchema = z.object({
+  room: z.object({
+    public_url: z.union([z.literal(""), z.string().url().refine((v) => {
+      const u = new URL(v);
+      return u.protocol === "https:" && u.pathname === "/" && !u.search && !u.hash && !u.username && !u.password;
+    }, "Use an HTTPS origin without path, credentials, query or fragment")]).default(""),
+    guest_code: z.string().default(""),
+    admin_code: z.string().default(""),
+  }).refine((r) => !r.public_url || (r.guest_code.length >= 8 && r.admin_code.length >= 24 && r.guest_code !== r.admin_code),
+    "Public access requires a guest code (8+ characters) and a different admin code (24+ characters)").default({}),
   http_port: z.number().int().positive().default(8080),
   openlist: z.object({
     base_url: z.string().url().refine((v) => /^https?:\/\//.test(v) && !new URL(v).username && !new URL(v).password && !new URL(v).search && !new URL(v).hash, "Use an HTTP(S) URL without credentials, query or fragment").optional(),

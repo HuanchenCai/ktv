@@ -51,6 +51,7 @@ export async function registerAdminRoutes(
     security?: "WPA" | "WEP" | "nopass";
     hidden?: boolean;
   },
+  publicUrl = "",
 ): Promise<void> {
   let portraitJob: Promise<PortraitProgress> | null = null;
   let lastPortraitProgress: PortraitProgress | null = null;
@@ -78,7 +79,7 @@ export async function registerAdminRoutes(
         return rep.code(500).send({
           error: err instanceof Error ? err.message : String(err),
           hint:
-            "check config.json.baidu_root and that OpenList has the Baidu storage configured + api_token is set",
+            "Check openlist.root (or baidu_root), source connectivity and OpenList api_token",
         });
       }
     },
@@ -95,19 +96,20 @@ export async function registerAdminRoutes(
   fastify.get("/api/admin/qrcode", async () => {
     const lanIps = getLanIps();
     const host = lanIps[0] ?? "localhost";
-    const url = `http://${host}:${http_port}`;
+    const url = publicUrl || `http://${host}:${http_port}`;
     const dataUrl = await QRCode.toDataURL(url, {
       errorCorrectionLevel: "M",
       width: 256,
     });
-    return { url, qr_data_url: dataUrl, lan_ips: lanIps };
+    return { url, qr_data_url: dataUrl, lan_ips: publicUrl ? [] : lanIps, remote: !!publicUrl };
   });
 
   /**
    * Standalone WiFi QR: scan to join the network, no URL involved.
    * Returns `null` payload if no SSID is configured.
    */
-  fastify.get("/api/admin/qrcode/wifi", async () => {
+  fastify.get("/api/admin/qrcode/wifi", async (req) => {
+    if (publicUrl || req.roomRole === "guest") return { configured: false, qr_data_url: null };
     if (!wifiCreds?.ssid) return { configured: false, qr_data_url: null };
     const payload =
       "WIFI:" +

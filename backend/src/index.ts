@@ -27,6 +27,7 @@ import { registerControlRoutes } from "./api/control.ts";
 import { registerAdminRoutes } from "./api/admin.ts";
 import { startQrFloater, type FloaterHandle } from "./qr-floater.ts";
 import { registerWs } from "./ws.ts";
+import { registerRoomAccess } from "./room-access.ts";
 
 async function main() {
   const root = projectRoot();
@@ -151,7 +152,7 @@ async function main() {
       mkdirSync(dataDir, { recursive: true });
       qrPath = resolve(dataDir, "qr.png");
       const lan = primaryLanIp();
-      const url = `http://${lan ?? "localhost"}:${config.http_port}`;
+      const url = config.room.public_url || `http://${lan ?? "localhost"}:${config.http_port}`;
       const png = await QRCode.toBuffer(url, {
         errorCorrectionLevel: "M",
         margin: 2,
@@ -303,6 +304,7 @@ async function main() {
       base: undefined,
     },
   });
+  registerRoomAccess(fastify, config.room, config.http_port);
 
   // Be lenient about empty JSON bodies on POST: many of our control endpoints
   // (skip, replay, toggle-vocal, queue/:id/top, import-local) take no payload,
@@ -390,6 +392,7 @@ async function main() {
       security: config.wifi.security,
       hidden: config.wifi.hidden,
     },
+    config.room.public_url,
   );
   await registerWs(fastify, orchestrator, adminEvents, downloads);
 
