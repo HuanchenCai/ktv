@@ -15,6 +15,7 @@ const ConfigSchema = z.object({
   }).refine((r) => !r.public_url || (r.guest_code.length >= 8 && r.admin_code.length >= 24 && r.guest_code !== r.admin_code),
     "Public access requires a guest code (8+ characters) and a different admin code (24+ characters)").default({}),
   http_port: z.number().int().positive().default(8080),
+  http_host: z.enum(["127.0.0.1", "0.0.0.0", "::1", "::"]).optional(),
   openlist: z.object({
     base_url: z.string().url().refine((v) => /^https?:\/\//.test(v) && !new URL(v).username && !new URL(v).password && !new URL(v).search && !new URL(v).hash, "Use an HTTP(S) URL without credentials, query or fragment").optional(),
     root: z.string().startsWith("/").optional(),

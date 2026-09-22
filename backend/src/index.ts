@@ -418,7 +418,7 @@ async function main() {
   });
 
   try {
-    await fastify.listen({ port: config.http_port, host: "0.0.0.0" });
+    await fastify.listen({ port: config.http_port, host: config.http_host ?? (config.room.public_url ? "127.0.0.1" : "0.0.0.0") });
     const nets = netIfaces();
     const lan: string[] = [];
     for (const ifaces of Object.values(nets)) {
@@ -430,6 +430,7 @@ async function main() {
     console.log("================================================");
     console.log("  KTV is up.");
     console.log(`    local:       http://localhost:${config.http_port}`);
+    if (config.room.public_url) console.log(`    room:        ${config.room.public_url} (HTTPS tunnel required)`);
     if (lan.length) {
       console.log(`    LAN (phone): http://${lan[0]}:${config.http_port}`);
     }
