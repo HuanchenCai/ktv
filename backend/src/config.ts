@@ -7,12 +7,14 @@ import { z } from "zod";
 const ConfigSchema = z.object({
   http_port: z.number().int().positive().default(8080),
   openlist: z.object({
+    base_url: z.string().url().refine((v) => /^https?:\/\//.test(v) && !new URL(v).username && !new URL(v).password && !new URL(v).search && !new URL(v).hash, "Use an HTTP(S) URL without credentials, query or fragment").optional(),
+    root: z.string().startsWith("/").optional(),
     port: z.number().int().positive().default(5244),
     data_dir: z.string().default("./openlist-data"),
     binary_path: z.string().default("./bin/openlist"),
     auto_spawn: z.boolean().default(true),
     api_token: z.string().default(""),
-  }),
+  }).refine((v) => !v.base_url || !v.auto_spawn, "Set openlist.auto_spawn=false when using base_url"),
   library_path: z.string().min(1),
   baidu_root: z.string().default("/baidu"),
   mpv: z.object({

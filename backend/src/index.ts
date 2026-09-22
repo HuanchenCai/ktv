@@ -92,7 +92,7 @@ async function main() {
 
   // --- OpenList subprocess --------------------------------------------------
 
-  const openlistUrl = `http://localhost:${config.openlist.port}`;
+  const openlistUrl = config.openlist.base_url?.replace(/\/$/, "") ?? `http://localhost:${config.openlist.port}`;
   let openlistProc: OpenListProcess | null = null;
   if (config.openlist.auto_spawn) {
     if (existsSync(config.openlist.binary_path)) {
@@ -278,6 +278,7 @@ async function main() {
     prefetchAhead: config.scheduler.prefetch_ahead,
     pollIntervalMs: config.scheduler.poll_interval_ms,
     baiduRoot: config.baidu_root,
+    resolveLibraryUrl: (cloudPath) => openlist.playbackUrl(cloudPath.slice("openlist://".length)),
     resolveOnlineUrl: async (cloudPath: string) => {
       const parsed = parseOnlineCloudPath(cloudPath);
       if (!parsed) throw new Error(`not an online cloud_path: ${cloudPath}`);
@@ -289,7 +290,7 @@ async function main() {
   });
   orchestrator.start();
 
-  const scanner = new Scanner(db, openlist, config.baidu_root);
+  const scanner = new Scanner(db, openlist, config.openlist.root ?? config.baidu_root);
 
   // --- HTTP server ----------------------------------------------------------
 

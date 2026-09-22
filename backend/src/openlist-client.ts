@@ -50,6 +50,20 @@ export class OpenListClient {
     this.cfg.token = token;
   }
 
+  /** Resolve just before playback: signed links may expire between parties.
+   * Use OpenList's proxy endpoint so NAS-private URLs and driver-required
+   * headers are handled on the storage host, not on the travelling laptop. */
+  async playbackUrl(path: string): Promise<string> {
+    const file = await this.post<{ sign?: string; is_dir?: boolean }>(
+      "/api/fs/get", { path, password: "" },
+    );
+    if (file.is_dir) throw new Error("Cannot play a directory");
+    const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+    const url = new URL(`${this.cfg.baseUrl.replace(/\/$/, "")}/p${encodedPath}`);
+    if (file.sign) url.searchParams.set("sign", file.sign);
+    return url.href;
+  }
+
   async list(path: string, password = ""): Promise<FsListItem[]> {
     const res = await this.post<{ content: FsListItem[] | null }>(
       "/api/fs/list",
@@ -106,6 +120,7 @@ export class OpenListClient {
       method: "POST",
       headers: this.headers(),
       body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(30_000),
     });
     return this.unwrap<T>(res);
   }
@@ -113,6 +128,7 @@ export class OpenListClient {
   private async get<T>(path: string): Promise<T> {
     const res = await fetch(`${this.cfg.baseUrl}${path}`, {
       headers: this.headers(),
+      signal: AbortSignal.timeout(30_000),
     });
     return this.unwrap<T>(res);
   }
