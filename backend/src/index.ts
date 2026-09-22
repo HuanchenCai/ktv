@@ -431,7 +431,7 @@ async function main() {
     console.log("  KTV is up.");
     console.log(`    local:       http://localhost:${config.http_port}`);
     if (config.room.public_url) console.log(`    room:        ${config.room.public_url} (HTTPS tunnel required)`);
-    if (lan.length) {
+    if (lan.length && (config.http_host === "0.0.0.0" || (!config.http_host && !config.room.public_url))) {
       console.log(`    LAN (phone): http://${lan[0]}:${config.http_port}`);
     }
     console.log(`    admin:       http://localhost:${config.http_port}/admin`);

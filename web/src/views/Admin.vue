@@ -159,7 +159,8 @@ async function pickFolder() {
       />
       <div v-if="qr" class="text-xs text-muted">
         {{ qr.url }}<br />
-        <span>LAN: {{ qr.lan_ips.join(", ") }}</span>
+        <span v-if="qr.lan_ips.length">LAN: {{ qr.lan_ips.join(", ") }}</span>
+        <span v-else>通过互联网入口加入，需输入房间口令</span>
       </div>
     </div>
 
