@@ -4,6 +4,7 @@ import type { Orchestrator } from "./queue-orchestrator.ts";
 import type { DownloadManager, DownloadTask as MgrTask } from "./download-manager.ts";
 
 type WsMessage =
+  | { type: "player.error"; payload: { song_id: number; message: string } }
   | { type: "queue.updated" }
   | { type: "download.progress"; payload: unknown }
   | { type: "player.state"; payload: unknown }
@@ -39,7 +40,7 @@ export async function registerWs(
   const broadcast = (msg: WsMessage) => {
     const payload = JSON.stringify(msg);
     for (const sock of clients) {
-      if (!admins.has(sock) && !["queue.updated", "download.progress", "player.state"].includes(msg.type)) continue;
+      if (!admins.has(sock) && !["queue.updated", "download.progress", "player.state", "player.error"].includes(msg.type)) continue;
       try {
         if (sock.readyState === 1) sock.send(payload);
       } catch {
@@ -49,6 +50,7 @@ export async function registerWs(
   };
 
   orchestrator.on("queue.updated", () => broadcast({ type: "queue.updated" }));
+  orchestrator.on("player.error", (payload) => broadcast({ type: "player.error", payload }));
   orchestrator.on("download.progress", (task) =>
     broadcast({ type: "download.progress", payload: task }),
   );

@@ -26,6 +26,7 @@ export type BaiduScanProgress = {
 };
 
 export type WsMessage =
+  | { type: "player.error"; payload: { song_id: number; message: string } }
   | { type: "queue.updated" }
   | { type: "download.progress"; payload: unknown }
   | { type: "player.state"; payload: unknown }

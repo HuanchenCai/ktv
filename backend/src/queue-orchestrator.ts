@@ -14,6 +14,7 @@ export type QueueViewRow = {
 };
 
 export type OrchestratorEvents = {
+  "player.error": (error: { song_id: number; message: string }) => void;
   "queue.updated": () => void;
   "download.progress": (task: DownloadTask) => void;
   "player.state": (state: {
@@ -536,7 +537,10 @@ export class Orchestrator extends EventEmitter {
         );
         // Pop it from the queue so the next song can advance — leaving
         // an unresolvable head in place would stall everything.
-        if (stillHead()) this.removeQueueItem(head.id);
+        if (stillHead()) {
+          this.emit("player.error", { song_id: song.id, message: `无法连接《${song.title}》的来源，已跳过。请检查网络或联系主持人。` });
+          this.removeQueueItem(head.id);
+        }
         // Let the rest of the queue try.
         setImmediate(() => void this.maybeAutoPlay().catch(() => {}));
         return;
@@ -574,6 +578,7 @@ export class Orchestrator extends EventEmitter {
       await this.mpv.loadFile(playablePath, song.vocal_channel);
     } catch (err) {
       console.error("[orchestrator] mpv.loadFile failed", err);
+      this.emit("player.error", { song_id: song.id, message: `《${song.title}》播放失败，请检查播放器或重新点歌。` });
       this.currentSongId = null;
       return;
     }
