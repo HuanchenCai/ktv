@@ -128,6 +128,7 @@ export class OpenListClient {
   }
 
   private async request<T>(path: string, method: "GET" | "POST", body?: unknown): Promise<T> {
+    if (!this.cfg.token && this.cfg.username && this.cfg.password) await this.refreshToken();
     for (let attempt = 0; attempt < 2; attempt++) {
       const usedToken = this.cfg.token;
       const res = await fetch(`${this.cfg.baseUrl}${path}`, {
