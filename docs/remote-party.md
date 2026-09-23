@@ -25,6 +25,8 @@ OpenList 可以运行在笔记本上，也可以运行在家中的 NAS 上。一
 
 **方案二：连接家中 OpenList / NAS。** 推荐在 NAS 和笔记本之间建立受认证的私有网络，例如 [Tailscale 的 NAS 远程访问方案](https://tailscale.com/docs/use-cases/personal-or-at-home-use/access-nas-media-file-servers)。笔记本用这个网络里的 OpenList 地址；手机不需要加入这个私有网络。已有可信 HTTPS 远程地址也可使用。
 
+**绿联 NAS + MacBook，无需在 NAS 安装 OpenList：** 在 MacBook 和 NAS 上登录同一 Tailscale 网络；从 [Tailscale 设备列表](https://console.tailscale.com/admin/machines)找到 NAS 的 `100.x.x.x` 地址。MacBook 的 Finder 按 `⌘K`，连接 `smb://100.x.x.x`，输入 NAS 文件共享账号并选择歌曲共享文件夹。确认 Finder 中能打开至少一首视频；外出时可让 MacBook 改用手机热点再验证一次。接着让**MacBook 上由 KTV 自动启动的 OpenList**添加 `Local` 存储，挂载路径如 `/nas`，根目录填已挂载的歌曲目录（如 `/Volumes/共享名/KTV`）；KTV 配置 `openlist.root: "/nas"`，保留 `auto_spawn: true`。也可在同一个 OpenList 下另挂百度网盘，此时把 `openlist.root` 设为包含两种挂载的共同上级路径。MacBook 重连网络或重启后，应先确认 NAS 共享目录仍挂载在相同路径。[Tailscale 的 macOS 文件共享说明](https://tailscale.com/docs/use-cases/personal-or-at-home-use/access-nas-media-file-servers?tab=macos)、[OpenList 本地存储说明](https://doc.oplist.org/guide/drivers/local)
+
 远程 OpenList 配置示例：
 
 ```json
@@ -42,6 +44,7 @@ OpenList 可以运行在笔记本上，也可以运行在家中的 NAS 上。一
 - NAS 的 `192.168.x.x` 地址出了家门通常不可达；先建立私有网络或 HTTPS 入口。仅填写地址不会自动完成穿透。
 - 在 OpenList 中为歌曲存储开启签名并允许代理读取，先验证文件能通过 `/p/` 代理访问。播放器使用临时签名链接，NAS 私有直链和驱动所需请求头由 OpenList 处理。[OpenList 存储通用设置](https://pages.doc.oplist.org/guide/drivers/common)
 - 远程 OpenList 需要保持开机。公开网络使用 HTTPS；HTTP 只用于本机或受保护的私有网络。
+- OpenList 的登录令牌可能失效。需要无人值守重启或长期开机时，可同时填写 `openlist.username` 和 `openlist.password`（建议创建仅能读取歌曲目录的专用账号），KTV 会在令牌失效时重新登录并重试一次。密码只保存在本机被忽略的 `config.json`，不要提交到 Git 或发给来宾。留空这两个字段时，仍兼容已有的 `api_token` 配置，但失效后需要手动更新。
 
 ## 再接手机互联网入口
 
