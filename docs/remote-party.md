@@ -52,7 +52,11 @@ OpenList 可以运行在笔记本上，也可以运行在家中的 NAS 上。一
 
 为**聚会笔记本**建立一个 HTTPS 隧道，把自己的域名转发到 `http://127.0.0.1:8080`，并支持 WebSocket `/ws`。例如 [Cloudflare Tunnel 官方设置指南](https://developers.cloudflare.com/tunnel/get-started/)支持把公网域名映射到本地服务。隧道客户端运行在带出门的笔记本上，而非只运行在家中的 NAS 上。
 
-然后在 `config.json` 填写：
+首轮测试可以使用已经安装的 [Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel)：先停止 KTV，在另一终端执行 `tailscale funnel 8080`，完成网页上的启用步骤，记下显示的 `https://...ts.net` 地址。这个地址面向普通互联网，来宾手机**不需要**安装 Tailscale。回到项目目录，执行 `npm run room:configure -- https://...ts.net`，脚本会把地址写入本机 `config.json` 并生成来宾、主持人两种口令；然后重新执行 `npm start`。保持 Funnel 终端和 KTV 终端都运行。首次启动 Funnel 时先停 KTV，是为了避免尚未启用房间口令的服务短暂暴露到公网。若 Mac 上没有可用的 `tailscale` 命令，也可以按前述 Cloudflare Tunnel 方案获得 HTTPS 地址后执行同一条 `room:configure` 命令。
+
+每次执行 `room:configure` 都会更换两种口令；主持人口令只留在主机上，不要发给来宾。配置文件被 Git 忽略，不要手动上传。
+
+如果不用上述脚本，也可以手动在 `config.json` 填写：
 
 ```json
 "room": {
