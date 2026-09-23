@@ -45,6 +45,21 @@ describe("remote library", () => {
     expect(fetcher.mock.calls.filter(([url]) => url.endsWith("/api/auth/login"))).toHaveLength(1);
   });
 
+  it("signs in before listing a private mount when no token was saved", async () => {
+    const fetcher = vi.fn().mockImplementation(async (input: string, init: RequestInit) => {
+      if (input.endsWith("/api/auth/login")) return new Response(JSON.stringify({ code: 200, data: { token: "fresh" } }));
+      expect((init.headers as Record<string, string>).Authorization).toBe("fresh");
+      return new Response(JSON.stringify({ code: 200, data: { content: [] } }));
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const client = new OpenListClient({ baseUrl: "https://nas.example", token: "", username: "ktv", password: "private" });
+    expect(await client.list("/private")).toEqual([]);
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      "https://nas.example/api/auth/login",
+      "https://nas.example/api/fs/list",
+    ]);
+  });
+
   it("indexes NAS and cloud mounts as streamable songs, without downloading, and is repeatable", async () => {
     const db = openInMemoryDb();
     try {
