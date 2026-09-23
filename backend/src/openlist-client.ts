@@ -14,6 +14,8 @@
 export type OpenListConfig = {
   baseUrl: string;
   token: string;
+  username?: string;
+  password?: string;
 };
 
 export type FsListItem = {
@@ -44,6 +46,8 @@ type RawResponse<T> = {
 };
 
 export class OpenListClient {
+  private refreshing: Promise<void> | null = null;
+
   constructor(private cfg: OpenListConfig) {}
 
   setToken(token: string) {
@@ -116,21 +120,47 @@ export class OpenListClient {
   }
 
   private async post<T>(path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${this.cfg.baseUrl}${path}`, {
-      method: "POST",
-      headers: this.headers(),
-      body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(30_000),
-    });
-    return this.unwrap<T>(res);
+    return this.request<T>(path, "POST", body);
   }
 
   private async get<T>(path: string): Promise<T> {
-    const res = await fetch(`${this.cfg.baseUrl}${path}`, {
-      headers: this.headers(),
-      signal: AbortSignal.timeout(30_000),
-    });
-    return this.unwrap<T>(res);
+    return this.request<T>(path, "GET");
+  }
+
+  private async request<T>(path: string, method: "GET" | "POST", body?: unknown): Promise<T> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const usedToken = this.cfg.token;
+      const res = await fetch(`${this.cfg.baseUrl}${path}`, {
+        method,
+        headers: this.headers(),
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000),
+      });
+      try {
+        return await this.unwrap<T>(res);
+      } catch (err) {
+        if (attempt > 0 || !(err instanceof OpenListAuthError) || !this.cfg.username || !this.cfg.password) throw err;
+        if (this.cfg.token === usedToken) await this.refreshToken();
+      }
+    }
+    throw new Error("openlist authentication retry failed");
+  }
+
+  private async refreshToken(): Promise<void> {
+    if (!this.refreshing) {
+      this.refreshing = (async () => {
+        const res = await fetch(`${this.cfg.baseUrl}/api/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: this.cfg.username, password: this.cfg.password }),
+          signal: AbortSignal.timeout(30_000),
+        });
+        const data = await this.unwrap<{ token: string }>(res);
+        if (!data?.token) throw new Error("openlist login did not return a token");
+        this.cfg.token = data.token;
+      })().finally(() => { this.refreshing = null; });
+    }
+    await this.refreshing;
   }
 
   private headers(): Record<string, string> {
@@ -141,12 +171,18 @@ export class OpenListClient {
 
   private async unwrap<T>(res: Response): Promise<T> {
     if (!res.ok) {
-      throw new Error(`openlist ${res.status}: ${await res.text()}`);
+      const detail = await res.text();
+      if (res.status === 401) throw new OpenListAuthError(`openlist ${res.status}: ${detail}`);
+      throw new Error(`openlist ${res.status}: ${detail}`);
     }
     const json = (await res.json()) as RawResponse<T>;
     if (json.code !== 200) {
-      throw new Error(`openlist code=${json.code} message=${json.message}`);
+      const message = `openlist code=${json.code} message=${json.message}`;
+      if (json.code === 401) throw new OpenListAuthError(message);
+      throw new Error(message);
     }
     return json.data;
   }
 }
+
+class OpenListAuthError extends Error {}
