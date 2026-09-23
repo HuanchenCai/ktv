@@ -52,7 +52,9 @@ OpenList 可以运行在笔记本上，也可以运行在家中的 NAS 上。一
 
 为**聚会笔记本**建立一个 HTTPS 隧道，把自己的域名转发到 `http://127.0.0.1:8080`，并支持 WebSocket `/ws`。例如 [Cloudflare Tunnel 官方设置指南](https://developers.cloudflare.com/tunnel/get-started/)支持把公网域名映射到本地服务。隧道客户端运行在带出门的笔记本上，而非只运行在家中的 NAS 上。
 
-首轮测试可以使用已经安装的 [Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel)：先停止 KTV，在另一终端执行 `tailscale funnel 8080`，完成网页上的启用步骤，记下显示的 `https://...ts.net` 地址。这个地址面向普通互联网，来宾手机**不需要**安装 Tailscale。回到项目目录，执行 `npm run room:configure -- https://...ts.net`，脚本会把地址写入本机 `config.json` 并生成来宾、主持人两种口令；然后重新执行 `npm start`。保持 Funnel 终端和 KTV 终端都运行。首次启动 Funnel 时先停 KTV，是为了避免尚未启用房间口令的服务短暂暴露到公网。若 Mac 上没有可用的 `tailscale` 命令，也可以按前述 Cloudflare Tunnel 方案获得 HTTPS 地址后执行同一条 `room:configure` 命令。
+首轮测试可以使用已经安装的 [Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel)：先停止 KTV，在另一终端执行 `tailscale funnel 8080`，完成网页上的启用步骤，记下显示的 `https://...ts.net` 地址。这个地址面向普通互联网，来宾手机**不需要**安装 Tailscale。回到项目目录，执行 `npm run room:configure -- https://...ts.net`，脚本会把地址写入本机 `config.json` 并生成来宾、主持人两种口令；然后重新执行 `npm start`。保持 Funnel 终端和 KTV 终端都运行。首次启动 Funnel 时先停 KTV，是为了避免尚未启用房间口令的服务短暂暴露到公网。
+
+若 Mac 上的 `tailscale` 命令不可用，可沿用 Windows 实测的 Cloudflare 快速隧道：KTV 停止后执行 `brew install cloudflared`，在另一终端运行 `cloudflared tunnel --url http://127.0.0.1:8080`，取得随机的 `https://...trycloudflare.com` 地址。即使本地 KTV 尚未启动，隧道也能先生成地址。回到项目执行 `npm run room:configure -- <刚显示的完整地址>`，再执行 `npm start`；保持两个终端运行。此快速隧道仅供测试，每次重启可能更换地址，届时需重新配置房间并重启 KTV。[Cloudflare 快速隧道说明](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)
 
 每次执行 `room:configure` 都会更换两种口令；主持人口令只留在主机上，不要发给来宾。配置文件被 Git 忽略，不要手动上传。
 
