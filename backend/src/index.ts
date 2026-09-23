@@ -118,6 +118,8 @@ async function main() {
   const openlist = new OpenListClient({
     baseUrl: openlistUrl,
     token: config.openlist.api_token,
+    username: config.openlist.username,
+    password: config.openlist.password,
   });
 
   // --- QR for the on-TV overlay ---------------------------------------------

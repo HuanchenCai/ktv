@@ -9,7 +9,9 @@
     "base_url": "https://nas.example.com",
     "root": "/KTV",
     "auto_spawn": false,
-    "api_token": ""
+    "api_token": "",
+    "username": "",
+    "password": ""
   },
   "library_path": "./library",
   "mpv": {

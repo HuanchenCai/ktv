@@ -24,7 +24,10 @@ const ConfigSchema = z.object({
     binary_path: z.string().default("./bin/openlist"),
     auto_spawn: z.boolean().default(true),
     api_token: z.string().default(""),
-  }).refine((v) => !v.base_url || !v.auto_spawn, "Set openlist.auto_spawn=false when using base_url"),
+    username: z.string().default(""),
+    password: z.string().default(""),
+  }).refine((v) => !v.base_url || !v.auto_spawn, "Set openlist.auto_spawn=false when using base_url")
+    .refine((v) => Boolean(v.username) === Boolean(v.password), "Set both openlist.username and openlist.password"),
   library_path: z.string().min(1),
   baidu_root: z.string().default("/baidu"),
   mpv: z.object({
