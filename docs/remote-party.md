@@ -56,6 +56,8 @@ OpenList 可以运行在笔记本上，也可以运行在家中的 NAS 上。一
 
 若 Mac 上的 `tailscale` 命令不可用，可沿用 Windows 实测的 Cloudflare 快速隧道：KTV 停止后执行 `brew install cloudflared`，在另一终端运行 `cloudflared tunnel --url http://127.0.0.1:8080`，取得随机的 `https://...trycloudflare.com` 地址。即使本地 KTV 尚未启动，隧道也能先生成地址。回到项目执行 `npm run room:configure -- <刚显示的完整地址>`，再执行 `npm start`；保持两个终端运行。此快速隧道仅供测试，每次重启可能更换地址，届时需重新配置房间并重启 KTV。[Cloudflare 快速隧道说明](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)
 
+若手机看到 Cloudflare 的 Bad Gateway / Host error，先在 Mac 浏览器打开 `http://127.0.0.1:8080/api/session`。能看到 `{"enabled":true,"role":null}` 表示 KTV 已启动，且这一步不需要主持人登录；此时检查隧道终端的 `--url` 是否正好是 `http://127.0.0.1:8080`，以及报错行中 `dial tcp` 后实际尝试连接的地址和端口。把 `localhost` 改成 `127.0.0.1` 可以避开某些机器把它解析为 IPv6 `::1`、但 KTV 只监听 IPv4 的情况。重启快速隧道若产生新网址，先用手机流量打开 `https://<新网址>/api/session` 验证能看到 JSON，再对新网址运行 `room:configure` 并重启 KTV；旧网址和旧口令不能用于新房间。Cloudflare 的 [502 排查说明](https://developers.cloudflare.com/tunnel/troubleshooting/)也建议先确认隧道客户端能访问本地服务。
+
 每次执行 `room:configure` 都会更换两种口令；主持人口令只留在主机上，不要发给来宾。配置文件被 Git 忽略，不要手动上传。
 
 如果不用上述脚本，也可以手动在 `config.json` 填写：
