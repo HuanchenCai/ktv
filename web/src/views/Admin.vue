@@ -232,16 +232,16 @@ async function pickFolder() {
     </div>
 
     <div class="card space-y-2">
-      <div class="font-semibold">导入本地已有 MKV</div>
+      <div class="font-semibold">导入本地或 NAS 歌曲</div>
       <div class="text-xs text-muted">
-        扫描所选目录下的 .mkv/.mp4 文件，标记为"已缓存"入库。支持网络
-        共享（UNC 路径）。
+        选择电脑上或已挂载 NAS 的歌曲文件夹。这里只建立歌曲索引，不复制视频；播放时直接读取该文件夹。
+        NAS 断线后重连，可以重新扫描恢复歌曲。
       </div>
       <div class="flex items-center gap-2">
         <input
           v-model="importPath"
           class="input text-sm flex-1"
-          placeholder="留空 = 用 config.library_path"
+          placeholder="选择歌曲文件夹，例如 /Volumes/KTV"
         />
         <button
           class="btn-ghost text-sm whitespace-nowrap"
@@ -256,7 +256,7 @@ async function pickFolder() {
         :disabled="importing"
         @click="runImportLocal"
       >
-        {{ importing ? "导入中..." : "开始导入" }}
+        {{ importing ? "扫描中..." : "扫描歌曲" }}
       </button>
       <div v-if="importResult" class="text-sm text-green-400">
         {{ importResult }}
