@@ -25,7 +25,9 @@ OpenList 可以运行在笔记本上，也可以运行在家中的 NAS 上。一
 
 **方案二：连接家中 OpenList / NAS。** 推荐在 NAS 和笔记本之间建立受认证的私有网络，例如 [Tailscale 的 NAS 远程访问方案](https://tailscale.com/docs/use-cases/personal-or-at-home-use/access-nas-media-file-servers)。笔记本用这个网络里的 OpenList 地址；手机不需要加入这个私有网络。已有可信 HTTPS 远程地址也可使用。
 
-**绿联 NAS + MacBook，无需在 NAS 安装 OpenList：** 在 MacBook 和 NAS 上登录同一 Tailscale 网络；从 [Tailscale 设备列表](https://console.tailscale.com/admin/machines)找到 NAS 的 `100.x.x.x` 地址。MacBook 的 Finder 按 `⌘K`，连接 `smb://100.x.x.x`，输入 NAS 文件共享账号并选择歌曲共享文件夹。确认 Finder 中能打开至少一首视频；外出时可让 MacBook 改用手机热点再验证一次。接着让**MacBook 上由 KTV 自动启动的 OpenList**添加 `Local` 存储，挂载路径如 `/nas`，根目录填已挂载的歌曲目录（如 `/Volumes/共享名/KTV`）；KTV 配置 `openlist.root: "/nas"`，保留 `auto_spawn: true`。也可在同一个 OpenList 下另挂百度网盘，此时把 `openlist.root` 设为包含两种挂载的共同上级路径。MacBook 重连网络或重启后，应先确认 NAS 共享目录仍挂载在相同路径。[Tailscale 的 macOS 文件共享说明](https://tailscale.com/docs/use-cases/personal-or-at-home-use/access-nas-media-file-servers?tab=macos)、[OpenList 本地存储说明](https://doc.oplist.org/guide/drivers/local)
+**绿联 NAS + MacBook，先做最简外网播放测试：** 在 MacBook 和 NAS 上登录同一 Tailscale 网络；从 [Tailscale 设备列表](https://console.tailscale.com/admin/machines)找到 NAS 的 `100.x.x.x` 地址。MacBook 的 Finder 按 `⌘K`，连接 `smb://100.x.x.x`，输入 NAS 文件共享账号并选择歌曲共享文件夹。确认 Finder 中能打开至少一首视频；外出时让 MacBook 改用手机热点验证。启动 KTV 后，在本机 `http://localhost:8080/admin` 的“导入本地或 NAS 歌曲”处选择已挂载的 NAS 歌曲文件夹，例如 `/Volumes/KTV`，然后搜索、点歌。这个入口只把文件路径与歌曲信息写入本机索引；mpv 播放时直接从 NAS 共享目录读取，歌曲不必复制到笔记本。MacBook 重连网络或重启后，先确认共享目录仍挂载在相同路径；如果短暂断线使歌曲显示不可用，重新扫描即可恢复。[Tailscale 的 macOS 文件共享说明](https://tailscale.com/docs/use-cases/personal-or-at-home-use/access-nas-media-file-servers?tab=macos)
+
+如果还要同时接入百度网盘，或希望 OpenList 管理多个歌源，可以改走 OpenList：在**MacBook 上由 KTV 自动启动的 OpenList**中添加 `Local` 存储，挂载路径如 `/nas`，根目录填已挂载的歌曲目录；KTV 配置 `openlist.root: "/nas"`，保留 `auto_spawn: true`。也可在同一个 OpenList 下另挂百度网盘，此时把 `openlist.root` 设为包含两种挂载的共同上级路径。[OpenList 本地存储说明](https://doc.oplist.org/guide/drivers/local)
 
 远程 OpenList 配置示例：
 
