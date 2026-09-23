@@ -17,6 +17,7 @@
     "scan:baidu": "tsx scripts/baidu-direct-scan.mjs",
     "download": "tsx scripts/download.mjs",
     "doctor": "node scripts/doctor.mjs",
+    "room:configure": "node scripts/configure-room.mjs",
     "setup": "npm run install:all && npm run fetch:openlist && npm run build:web",
     "test": "vitest run",
     "typecheck": "tsc -p backend/tsconfig.json --noEmit"
