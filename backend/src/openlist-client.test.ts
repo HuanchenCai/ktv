@@ -25,6 +25,26 @@ describe("remote library", () => {
     await expect(new OpenListClient({ baseUrl: "https://nas.example", token: "bad" }).playbackUrl("/song.mkv")).rejects.toThrow("401");
   });
 
+  it("logs in once and retries concurrent source reads after token invalidation", async () => {
+    const fetcher = vi.fn().mockImplementation(async (input: string, init: RequestInit) => {
+      if (input.endsWith("/api/auth/login")) {
+        expect(JSON.parse(init.body as string)).toEqual({ username: "ktv", password: "private" });
+        return new Response(JSON.stringify({ code: 200, data: { token: "fresh" } }));
+      }
+      if ((init.headers as Record<string, string>).Authorization !== "fresh") {
+        return new Response(JSON.stringify({ code: 401, message: "token is invalidated" }));
+      }
+      if (input.endsWith("/api/fs/list")) return new Response(JSON.stringify({ code: 200, data: { content: [] } }));
+      return new Response(JSON.stringify({ code: 200, data: { sign: "signed", is_dir: false } }));
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const client = new OpenListClient({ baseUrl: "https://nas.example", token: "stale", username: "ktv", password: "private" });
+    const [files, url] = await Promise.all([client.list("/KTV"), client.playbackUrl("/KTV/song.mkv")]);
+    expect(files).toEqual([]);
+    expect(url).toContain("sign=signed");
+    expect(fetcher.mock.calls.filter(([url]) => url.endsWith("/api/auth/login"))).toHaveLength(1);
+  });
+
   it("indexes NAS and cloud mounts as streamable songs, without downloading, and is repeatable", async () => {
     const db = openInMemoryDb();
     try {

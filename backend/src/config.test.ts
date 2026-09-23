@@ -23,6 +23,10 @@ describe("portable configuration", () => {
     expect(() => parse({ openlist: { base_url: "https://nas.example" } })).toThrow();
     expect(parse({ openlist: { base_url: "https://nas.example", auto_spawn: false, root: "/nas" } }).openlist.root).toBe("/nas");
   });
+  it("requires both OpenList login fields when automatic renewal is enabled", () => {
+    expect(() => parse({ openlist: { username: "ktv" } })).toThrow();
+    expect(parse({ openlist: { username: "ktv", password: "private" } }).openlist.username).toBe("ktv");
+  });
   it("rejects public mode without separate sufficient credentials", () => {
     expect(() => parse({ room: { public_url: "https://party.example" } })).toThrow();
     expect(() => parse({ room: { public_url: "https://party.example", guest_code: "short", admin_code: "long-admin-secret-123456789" } })).toThrow();
