@@ -464,6 +464,7 @@ export class MpvController extends EventEmitter {
 
   /** Switch between a dedicated full-screen display and a capturable window. */
   async setFullscreen(on: boolean): Promise<void> {
+    const previous = this.fullscreen;
     this.fullscreen = on;
     if (!on) this.stopFsBurst();
     if (!this.mpv) return;
@@ -475,6 +476,7 @@ export class MpvController extends EventEmitter {
       });
       await Promise.resolve(this.mpv.setProperty("fullscreen", on));
     } catch (err) {
+      this.fullscreen = previous;
       console.warn("[mpv] setFullscreen failed:", err);
       throw err;
     }
