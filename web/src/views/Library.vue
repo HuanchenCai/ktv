@@ -18,6 +18,7 @@ type Song = {
   lang: string | null;
   pinyin: string;
   cached: 0 | 1;
+  visible: 0 | 1;
   size_bytes: number | null;
   last_played_at: number | null;
   play_count: number;
@@ -57,6 +58,7 @@ const sort = ref<"id" | "title" | "artist" | "last_played_at" | "play_count" | "
 const order = ref<"asc" | "desc">("desc");
 const filter = ref("");
 const cachedOnly = ref(false);
+const visibility = ref<"all" | "visible" | "hidden">("all");
 const loading = ref(false);
 const error = ref("");
 
@@ -64,6 +66,10 @@ const scanProgress = ref<ScanProgress | null>(null);
 const importProgress = ref<ImportProgress | null>(null);
 const scanning = ref(false);
 const importing = ref(false);
+const importPath = ref("");
+const picking = ref(false);
+const importResult = ref("");
+const scanResult = ref("");
 
 // Baidu scan
 const baiduProgress = ref<BaiduScanProgress | null>(null);
@@ -162,6 +168,7 @@ async function loadSongs() {
   });
   if (filter.value.trim()) u.set("filter", filter.value.trim());
   if (cachedOnly.value) u.set("cached_only", "1");
+  if (visibility.value !== "all") u.set("visibility", visibility.value);
   try {
     const res = (await fetch(`/api/library/songs?${u}`).then((r) =>
       r.json(),
@@ -234,7 +241,7 @@ watch(filter, () => {
     loadSongs();
   }, 200);
 });
-watch([sort, order, page, cachedOnly, limit], () => loadSongs());
+watch([sort, order, page, cachedOnly, visibility, limit], () => loadSongs());
 
 const totalPages = computed(() =>
   Math.max(1, Math.ceil(totalRows.value / limit.value)),
@@ -275,14 +282,43 @@ function fmtDate(ts: number | null): string {
 async function startImport() {
   importing.value = true;
   importProgress.value = null;
+  error.value = "";
   try {
-    await fetch("/api/admin/import-local", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
+    const result = await api.importLocal(importPath.value.trim() || undefined);
+    importResult.value = `扫描 ${result.scanned} 个文件，入库 ${result.added}，跳过 ${result.skipped}`;
+    await refreshAll();
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    importing.value = false;
+  }
+}
+
+async function pickImportFolder() {
+  picking.value = true;
+  error.value = "";
+  try {
+    const result = await api.pickFolder();
+    if (result.path) importPath.value = result.path;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    picking.value = false;
+  }
+}
+
+async function startOpenListScan() {
+  scanning.value = true;
+  scanProgress.value = null;
+  error.value = "";
+  try {
+    const result = await api.scan(20);
+    scanResult.value = `新增 ${result.inserted}，更新 ${result.updated}，跳过 ${result.skipped}`;
+    await refreshAll();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    scanning.value = false;
   }
 }
 
@@ -504,6 +540,23 @@ async function downloadSelected() {
     downloading.value = false;
   }
 }
+
+async function setSongVisibility(song: Song) {
+  error.value = "";
+  const visible = song.visible === 0;
+  try {
+    const response = await fetch(`/api/library/songs/${song.id}/visibility`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visible }),
+    });
+    if (!response.ok) throw new Error(`更新失败 (${response.status})`);
+    song.visible = visible ? 1 : 0;
+    if (visibility.value !== "all") await loadSongs();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  }
+}
 </script>
 
 <template>
@@ -563,21 +616,23 @@ async function downloadSelected() {
       </div>
     </div>
 
-    <!-- ACTIONS — local scan only. Baidu scan is in its own card below
-         (the BDUSS-direct path). The old OpenList-based Baidu scan
-         button was removed: it duplicates the same feature with a
-         flakier code path and confused the UI. -->
+    <!-- Sources and indexing live together in host settings. Paths refer to
+         the playback computer, never to the phone used to manage it. -->
     <div class="card space-y-3">
-      <h3 class="h-section">扫描入库</h3>
+      <h3 class="h-section">本地或已挂载 NAS</h3>
+      <p class="text-xs text-muted">填写播放电脑上的歌曲路径，例如 /Volumes/KTV。只建立索引，不复制视频。手机端可以填写路径；“浏览”会在播放电脑上打开文件夹选择器。</p>
       <div class="flex flex-wrap gap-2">
+        <input v-model="importPath" class="input min-w-0 flex-1 text-sm" placeholder="/Volumes/KTV" spellcheck="false" />
+        <button class="btn-ghost hidden text-sm lg:inline-flex" :disabled="picking" @click="pickImportFolder">{{ picking ? "选择中..." : "浏览" }}</button>
         <button
           class="btn-primary text-sm"
           :disabled="scanning || importing || baiduScanning"
           @click="startImport"
         >
-          {{ importing ? "导入中..." : "📁 扫本地目录" }}
+          {{ importing ? "导入中..." : "扫描歌曲" }}
         </button>
       </div>
+      <p v-if="importResult" class="text-sm text-green-400">{{ importResult }}</p>
       <div
         v-if="importProgress && importing"
         class="text-xs text-muted space-y-1.5"
@@ -587,6 +642,14 @@ async function downloadSelected() {
           {{ importProgress.current_dir }}
         </div>
       </div>
+    </div>
+
+    <div class="card space-y-3">
+      <h3 class="h-section">OpenList 歌源</h3>
+      <p class="text-xs text-muted">扫描已在 OpenList 中挂载的 NAS、百度云或 WebDAV 目录。只保存索引，播放时读取原歌源。连接地址、根目录与凭据仍由播放电脑的 config.json 提供。</p>
+      <button class="btn-primary text-sm" :disabled="scanning || importing || baiduScanning" @click="startOpenListScan">{{ scanning ? "扫描中..." : "扫描 OpenList 曲库" }}</button>
+      <p v-if="scanResult" class="text-sm text-green-400">{{ scanResult }}</p>
+      <p v-if="scanProgress && scanning" class="text-xs text-muted">新增 {{ scanProgress.inserted }}，更新 {{ scanProgress.updated }}，跳过 {{ scanProgress.skipped }}</p>
     </div>
 
     <!-- ORGANIZE INTO <ARTIST>/ FOLDERS -->
@@ -944,6 +1007,7 @@ async function downloadSelected() {
 
     <!-- TABLE -->
     <div class="card space-y-3 p-0 overflow-hidden">
+      <p class="px-3 pt-3 text-xs text-muted">在此选择哪些歌曲可被搜索和点播；隐藏不会删除歌曲文件或索引。</p>
       <div class="p-3 flex flex-wrap items-center gap-3 border-b border-border/60">
         <input
           v-model="filter"
@@ -954,6 +1018,11 @@ async function downloadSelected() {
           <input v-model="cachedOnly" type="checkbox" />
           只看已缓存
         </label>
+        <select v-model="visibility" aria-label="点歌可见性" class="bg-elevated rounded px-2 py-1.5 text-xs">
+          <option value="all">全部歌曲</option>
+          <option value="visible">可点歌曲</option>
+          <option value="hidden">已隐藏歌曲</option>
+        </select>
         <select v-model="limit" class="bg-elevated rounded px-2 py-1.5 text-xs">
           <option :value="25">25/页</option>
           <option :value="50">50/页</option>
@@ -1007,6 +1076,7 @@ async function downloadSelected() {
                 最近{{ caret('last_played_at') }}
               </th>
               <th class="px-3 py-2 text-center">缓存</th>
+              <th class="px-3 py-2 text-center">点歌</th>
             </tr>
           </thead>
           <tbody>
@@ -1044,9 +1114,12 @@ async function downloadSelected() {
                 </span>
                 <span v-else class="text-muted/50" title="未缓存">○</span>
               </td>
+              <td class="px-3 py-2 text-center">
+                <button class="text-xs whitespace-nowrap" :class="s.visible ? 'text-cyan-300' : 'text-muted'" @click="setSongVisibility(s)">{{ s.visible ? "可点 · 隐藏" : "已隐藏 · 恢复" }}</button>
+              </td>
             </tr>
             <tr v-if="!songs.length && !loading">
-              <td colspan="8" class="text-center text-muted py-8 text-sm">
+              <td colspan="9" class="text-center text-muted py-8 text-sm">
                 没有匹配的歌
               </td>
             </tr>

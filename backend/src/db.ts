@@ -43,6 +43,7 @@ export type Song = {
   cloud_path: string;
   size_bytes: number | null;
   cached: 0 | 1;
+  visible: 0 | 1;
   local_path: string | null;
   vocal_channel: "L" | "R";
   last_played_at: number | null;
@@ -146,6 +147,10 @@ const MIGRATIONS: Array<{ name: string; sql: string }> = [
     // rows ignore this column entirely. Default NULL = "never seen by
     // this mechanism" so existing rows aren't accidentally pruned.
     sql: "ALTER TABLE songs ADD COLUMN last_seen_at INTEGER",
+  },
+  {
+    name: "add visible",
+    sql: "ALTER TABLE songs ADD COLUMN visible INTEGER NOT NULL DEFAULT 1",
   },
 ];
 

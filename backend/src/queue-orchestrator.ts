@@ -213,6 +213,7 @@ export class Orchestrator extends EventEmitter {
       .prepare("SELECT * FROM songs WHERE id = ?")
       .get(songId) as Song | undefined;
     if (!song) throw new Error(`song ${songId} not found`);
+    if (song.visible === 0) throw new Error("这首歌已从点歌列表隐藏");
 
     const maxPos = (
       this.db.prepare("SELECT COALESCE(MAX(position), 0) AS m FROM queue").get() as {
@@ -804,7 +805,7 @@ export class Orchestrator extends EventEmitter {
     if (this.lastArtist) {
       filler = pick(
         `SELECT id, artist, local_path, vocal_channel FROM songs
-         WHERE cached = 1 AND local_path IS NOT NULL AND artist = ? AND id != ?
+         WHERE cached = 1 AND visible = 1 AND local_path IS NOT NULL AND artist = ? AND id != ?
          ORDER BY RANDOM() LIMIT 8`,
         this.lastArtist,
         excludeId,
@@ -814,7 +815,7 @@ export class Orchestrator extends EventEmitter {
       // artist has no other cached songs (or none playable) → random any
       filler = pick(
         `SELECT id, artist, local_path, vocal_channel FROM songs
-         WHERE cached = 1 AND local_path IS NOT NULL AND id != ?
+         WHERE cached = 1 AND visible = 1 AND local_path IS NOT NULL AND id != ?
          ORDER BY RANDOM() LIMIT 8`,
         excludeId,
       );

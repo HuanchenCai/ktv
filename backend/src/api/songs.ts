@@ -24,7 +24,7 @@ export async function registerSongsRoutes(
     const sort = req.query.sort ?? "popular";
 
     let sql = "SELECT * FROM songs";
-    const where: string[] = [];
+    const where: string[] = ["visible = 1"];
     const params: Array<string | number> = [];
     if (q) {
       where.push(
@@ -90,7 +90,7 @@ export async function registerSongsRoutes(
   fastify.get<{ Params: { id: string } }>("/api/songs/:id", async (req, rep) => {
     const id = parseInt(req.params.id, 10);
     const row = db
-      .prepare("SELECT * FROM songs WHERE id = ?")
+      .prepare("SELECT * FROM songs WHERE id = ? AND visible = 1")
       .get(id) as Song | undefined;
     if (!row) return rep.code(404).send({ error: "not found" });
     return row;
@@ -137,7 +137,7 @@ export async function registerSongsRoutes(
       parseInt(req.query.min_count ?? "2", 10),
     );
 
-    const where: string[] = [];
+    const where: string[] = ["visible = 1"];
     const params: Array<string | number> = [];
     if (q) {
       where.push(
@@ -185,7 +185,7 @@ export async function registerSongsRoutes(
       .prepare(
         `SELECT artist, COUNT(*) AS count,
                 COALESCE(MAX(artist_pinyin), '') AS pinyin
-         FROM songs GROUP BY artist`,
+         FROM songs WHERE visible = 1 GROUP BY artist`,
       )
       .all() as Array<{ artist: string; count: number; pinyin: string }>;
     const map = new Map(rows.map((r) => [r.artist, r]));
@@ -209,11 +209,11 @@ export async function registerSongsRoutes(
 
   fastify.get("/api/stats", async () => {
     const total = (
-      db.prepare("SELECT COUNT(*) AS c FROM songs").get() as { c: number }
+      db.prepare("SELECT COUNT(*) AS c FROM songs WHERE visible = 1").get() as { c: number }
     ).c;
     const cached = (
       db
-        .prepare("SELECT COUNT(*) AS c FROM songs WHERE cached = 1")
+        .prepare("SELECT COUNT(*) AS c FROM songs WHERE cached = 1 AND visible = 1")
         .get() as { c: number }
     ).c;
     return { total, cached };
@@ -306,6 +306,7 @@ export async function registerSongsRoutes(
       artist?: string;
       lang?: string;
       cached_only?: string;
+      visibility?: string;
     };
   }>("/api/library/songs", async (req) => {
     const page = Math.max(1, parseInt(req.query.page ?? "1", 10) || 1);
@@ -344,6 +345,8 @@ export async function registerSongsRoutes(
       params.push(req.query.lang);
     }
     if (req.query.cached_only === "1") where.push("cached = 1");
+    if (req.query.visibility === "visible") where.push("visible = 1");
+    if (req.query.visibility === "hidden") where.push("visible = 0");
     const whereClause = where.length ? " WHERE " + where.join(" AND ") : "";
 
     const total = (
@@ -365,5 +368,19 @@ export async function registerSongsRoutes(
       .all(...params, limit, offset);
 
     return { songs: rows, total, page, limit };
+  });
+
+  fastify.patch<{
+    Params: { id: string };
+    Body: { visible?: boolean };
+  }>("/api/library/songs/:id/visibility", async (req, rep) => {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id < 1 || typeof req.body?.visible !== "boolean") {
+      return rep.code(400).send({ error: "valid song id and visible boolean required" });
+    }
+    const result = db.prepare("UPDATE songs SET visible = ? WHERE id = ?")
+      .run(req.body.visible ? 1 : 0, id);
+    if (!result.changes) return rep.code(404).send({ error: "song not found" });
+    return { id, visible: req.body.visible };
   });
 }

@@ -5,23 +5,23 @@ export default {
     extend: {
       colors: {
         // Background tiers
-        bg: "#06060c",
-        elevated: "#0e0e18",
-        panel: "#13131f",
-        "panel-hover": "#1c1c2c",
-        border: "#27273a",
+        bg: "#0b141b",
+        elevated: "#111f29",
+        panel: "#172833",
+        "panel-hover": "#203540",
+        border: "#29414b",
 
         // Brand — keep the API stable, refresh the actual colors
         accent: {
-          DEFAULT: "#ff2e6b",
-          soft: "#ff7aa1",
-          hover: "#ff4d80",
+          DEFAULT: "#62e6f0",
+          soft: "#9bf2f5",
+          hover: "#9bf2f5",
         },
-        // New neon palette for the V2 look
+        // Keep the utility names for existing components.
         neon: {
-          pink: "#ff2e6b",
-          fuchsia: "#d946ef",
-          violet: "#8b5cf6",
+          pink: "#62e6f0",
+          fuchsia: "#3bbad2",
+          violet: "#187eab",
           cyan: "#22d3ee",
           amber: "#fbbf24",
         },
@@ -39,9 +39,9 @@ export default {
         ],
       },
       boxShadow: {
-        glow: "0 0 30px rgba(255, 46, 107, 0.35), 0 0 6px rgba(255, 46, 107, 0.45)",
+        glow: "0 0 30px rgba(98, 230, 240, 0.35), 0 0 6px rgba(98, 230, 240, 0.45)",
         "glow-violet":
-          "0 0 30px rgba(139, 92, 246, 0.35), 0 0 6px rgba(139, 92, 246, 0.45)",
+          "0 0 30px rgba(24, 126, 171, 0.35), 0 0 6px rgba(24, 126, 171, 0.45)",
         "glow-cyan":
           "0 0 30px rgba(34, 211, 238, 0.30), 0 0 6px rgba(34, 211, 238, 0.40)",
         card: "0 4px 16px rgba(0, 0, 0, 0.35)",
@@ -69,11 +69,11 @@ export default {
         pulseGlow: {
           "0%, 100%": {
             boxShadow:
-              "0 0 24px rgba(255, 46, 107, 0.25), 0 0 4px rgba(255, 46, 107, 0.4)",
+              "0 0 24px rgba(98, 230, 240, 0.25), 0 0 4px rgba(98, 230, 240, 0.4)",
           },
           "50%": {
             boxShadow:
-              "0 0 40px rgba(255, 46, 107, 0.55), 0 0 8px rgba(255, 46, 107, 0.7)",
+              "0 0 40px rgba(98, 230, 240, 0.55), 0 0 8px rgba(98, 230, 240, 0.7)",
           },
         },
         marquee: {

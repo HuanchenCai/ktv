@@ -82,7 +82,7 @@ function openAll() {
             v-if="selected === r.artist"
             class="absolute inset-0 rounded-full"
             style="
-              background: conic-gradient(from 0deg, #ff2e6b, #d946ef, #8b5cf6, #22d3ee, #ff2e6b);
+              background: conic-gradient(from 0deg, #62e6f0, #3bbad2, #187eab, #22d3ee, #62e6f0);
               filter: blur(8px);
               opacity: 0.7;
             "
@@ -93,7 +93,7 @@ function openAll() {
             :class="selected === r.artist ? '' : 'ring-1 ring-white/10 group-hover:ring-white/25'"
             :style="
               selected === r.artist
-                ? 'background: linear-gradient(135deg, #ff2e6b, #d946ef); padding: 2.5px;'
+                ? 'background: linear-gradient(135deg, #62e6f0, #3bbad2); padding: 2.5px;'
                 : ''
             "
           ></div>

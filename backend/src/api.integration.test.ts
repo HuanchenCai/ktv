@@ -14,6 +14,7 @@ import { registerControlRoutes } from "./api/control.ts";
 function makeMpv() {
   const e = new EventEmitter();
   const calls: Array<{ fn: string; args: unknown[] }> = [];
+  let fullscreen = true;
   const stub = {
     on: e.on.bind(e),
     emit: e.emit.bind(e),
@@ -42,6 +43,11 @@ function makeMpv() {
     },
     setVolume: async (...args: unknown[]) => {
       calls.push({ fn: "setVolume", args });
+    },
+    prefersFullscreen: () => fullscreen,
+    setFullscreen: async (on: boolean) => {
+      fullscreen = on;
+      calls.push({ fn: "setFullscreen", args: [on] });
     },
     getState: async () => ({ vocal_channel: "both" as const }),
     shutdown: async () => {},
@@ -229,5 +235,35 @@ describe("API integration (routes against stubbed deps)", () => {
       payload: { volume: 50 },
     });
     expect(res.statusCode).toBe(200);
+  });
+
+  it("hiding a song removes it from search and blocks new queue entries", async () => {
+    const hidden = await app.inject({
+      method: "PATCH",
+      url: "/api/library/songs/1/visibility",
+      payload: { visible: false },
+    });
+    expect(hidden.statusCode).toBe(200);
+    expect((await app.inject("/api/songs?q=zyn")).json().count).toBe(0);
+    expect((await app.inject("/api/artists?min_count=1")).json().artists[0].count).toBe(2);
+    expect((await app.inject({ method: "POST", url: "/api/queue", payload: { song_id: 1 } })).statusCode).toBe(400);
+    expect((await app.inject("/api/library/songs?visibility=hidden")).json().songs.map((s: { id: number }) => s.id)).toEqual([1]);
+
+    const restored = await app.inject({
+      method: "PATCH",
+      url: "/api/library/songs/1/visibility",
+      payload: { visible: true },
+    });
+    expect(restored.statusCode).toBe(200);
+    expect((await app.inject("/api/songs?q=zyn")).json().count).toBe(1);
+  });
+
+  it("lets the host switch the output window and rejects invalid display modes", async () => {
+    expect((await app.inject("/api/control/display-mode")).json()).toEqual({ mode: "fullscreen" });
+    const changed = await app.inject({ method: "POST", url: "/api/control/display-mode", payload: { mode: "window" } });
+    expect(changed.statusCode).toBe(200);
+    expect(changed.json()).toEqual({ mode: "window" });
+    expect((await app.inject("/api/control/display-mode")).json()).toEqual({ mode: "window" });
+    expect((await app.inject({ method: "POST", url: "/api/control/display-mode", payload: { mode: "invalid" } })).statusCode).toBe(400);
   });
 });

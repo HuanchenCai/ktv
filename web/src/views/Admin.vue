@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 import { api } from "../lib/api";
-import { onWs } from "../lib/ws";
 
 const health = ref<{
   ok: boolean;
@@ -14,23 +13,7 @@ const health = ref<{
 } | null>(null);
 const qr = ref<{ url: string; qr_data_url: string; lan_ips: string[] } | null>(null);
 const initialPassword = ref<string | null>(null);
-const scanResult = ref<string>("");
-const scanning = ref(false);
-const importResult = ref<string>("");
-const importing = ref(false);
-const importPath = ref<string>("");
-const picking = ref(false);
 const error = ref("");
-
-const portraitProgress = ref<{
-  total: number;
-  done: number;
-  ok: number;
-  missed: number;
-  current: string | null;
-} | null>(null);
-const portraitRunning = ref(false);
-const portraitMinSongs = ref(2);
 
 async function refresh() {
   try {
@@ -38,80 +21,13 @@ async function refresh() {
     qr.value = await api.qr();
     const status = await fetch("/api/admin/openlist-status").then((r) => r.json());
     initialPassword.value = status.initial_password ?? null;
-    const pp = await api.portraitProgress();
-    portraitRunning.value = pp.running;
-    portraitProgress.value = pp.progress;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   }
 }
 
-let unsub: (() => void) | null = null;
-onMounted(() => {
-  refresh();
-  unsub = onWs((msg) => {
-    if (msg.type === "portrait.progress") {
-      portraitProgress.value = msg.payload as typeof portraitProgress.value;
-      portraitRunning.value =
-        portraitProgress.value !== null &&
-        portraitProgress.value.done < portraitProgress.value.total;
-    }
-  });
-});
-onUnmounted(() => unsub?.());
+onMounted(() => { void refresh(); });
 
-async function runPortraits() {
-  portraitRunning.value = true;
-  try {
-    await api.fetchPortraits({ min_song_count: portraitMinSongs.value });
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err);
-    portraitRunning.value = false;
-  }
-}
-
-async function runScan() {
-  scanning.value = true;
-  error.value = "";
-  try {
-    const r = await api.scan(20);
-    scanResult.value = `新增 ${r.inserted}，更新 ${r.updated}，跳过 ${r.skipped}`;
-    await refresh();
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err);
-  } finally {
-    scanning.value = false;
-  }
-}
-
-async function runImportLocal() {
-  importing.value = true;
-  error.value = "";
-  try {
-    const r = await api.importLocal(importPath.value || undefined);
-    importResult.value = `扫 ${r.scanned} 个文件（${r.scanned_path}），入库 ${r.added}，跳过 ${r.skipped}`;
-    await refresh();
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err);
-  } finally {
-    importing.value = false;
-  }
-}
-
-async function pickFolder() {
-  picking.value = true;
-  error.value = "";
-  try {
-    const r = await api.pickFolder();
-    if (r.path) {
-      importPath.value = r.path;
-    }
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err);
-  } finally {
-    picking.value = false;
-  }
-}
 </script>
 
 <template>
@@ -161,105 +77,6 @@ async function pickFolder() {
         {{ qr.url }}<br />
         <span v-if="qr.lan_ips.length">LAN: {{ qr.lan_ips.join(", ") }}</span>
         <span v-else>通过互联网入口加入，需输入房间口令</span>
-      </div>
-    </div>
-
-    <div class="card space-y-2">
-      <div class="font-semibold">扫描云盘 / NAS 曲库</div>
-      <div class="text-xs text-muted">
-        从 OpenList 扫描歌曲目录，只保存索引，不下载整库。支持百度云、远程 NAS、WebDAV 等存储；点歌后直接播放远程视频。
-        请先配置 OpenList 地址、曲库目录和访问凭据。支持增量，可以反复点。
-      </div>
-      <button class="btn-primary" :disabled="scanning" @click="runScan">
-        {{ scanning ? "扫描中..." : "开始扫描" }}
-      </button>
-      <div v-if="scanResult" class="text-sm text-green-400">{{ scanResult }}</div>
-    </div>
-
-    <div class="card space-y-2">
-      <div class="font-semibold">抓取歌手头像</div>
-      <div class="text-xs text-muted">
-        从 Wikipedia / Wikidata 抓歌手照片（CC-BY / CC-BY-SA）。
-        节流 1 req/s，可能需要几分钟到几十分钟。已抓的会跳过。
-      </div>
-      <div class="flex items-center gap-2">
-        <label class="text-xs text-muted">最少歌数门槛:</label>
-        <input
-          v-model.number="portraitMinSongs"
-          type="number"
-          min="1"
-          max="20"
-          class="bg-elevated rounded px-2 py-1 text-sm w-20"
-        />
-        <button
-          class="btn-primary text-sm"
-          :disabled="portraitRunning"
-          @click="runPortraits"
-        >
-          {{ portraitRunning ? "抓取中..." : "开始抓取" }}
-        </button>
-      </div>
-      <div
-        v-if="portraitProgress"
-        class="space-y-1.5 text-xs pt-1"
-      >
-        <div class="flex items-center gap-2">
-          <div class="flex-1 h-1.5 bg-black/40 rounded overflow-hidden">
-            <div
-              class="h-full bg-accent transition-all"
-              :style="{
-                width:
-                  portraitProgress.total > 0
-                    ? (portraitProgress.done / portraitProgress.total) * 100 +
-                      '%'
-                    : '0%',
-              }"
-            ></div>
-          </div>
-          <span class="font-mono tabular-nums w-20 text-right text-muted">
-            {{ portraitProgress.done }} / {{ portraitProgress.total }}
-          </span>
-        </div>
-        <div class="flex justify-between text-muted">
-          <span>
-            ✓ {{ portraitProgress.ok }} · ✗ {{ portraitProgress.missed }}
-          </span>
-          <span v-if="portraitProgress.current" class="truncate">
-            正在: {{ portraitProgress.current }}
-          </span>
-        </div>
-      </div>
-    </div>
-
-    <div class="card space-y-2">
-      <div class="font-semibold">导入本地或 NAS 歌曲</div>
-      <div class="text-xs text-muted">
-        选择电脑上或已挂载 NAS 的歌曲文件夹。这里只建立歌曲索引，不复制视频；播放时直接读取该文件夹。
-        NAS 断线后重连，可以重新扫描恢复歌曲。
-      </div>
-      <div class="flex items-center gap-2">
-        <input
-          v-model="importPath"
-          class="input text-sm flex-1"
-          placeholder="选择歌曲文件夹，例如 /Volumes/KTV"
-        />
-        <button
-          class="btn-ghost text-sm whitespace-nowrap"
-          :disabled="picking"
-          @click="pickFolder"
-        >
-          {{ picking ? "选择中..." : "📁 浏览..." }}
-        </button>
-      </div>
-      <button
-        class="btn-primary text-sm"
-        :disabled="importing"
-        @click="runImportLocal"
-      >
-        {{ importing ? "扫描中..." : "扫描歌曲" }}
-      </button>
-      <div v-if="importResult" class="text-sm text-green-400">
-        {{ importResult }}
       </div>
     </div>
 

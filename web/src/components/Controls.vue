@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref } from "vue";
 import { api } from "../lib/api";
 import { onWs } from "../lib/ws";
+import { roomRole } from "../lib/session";
 
 const volume = ref(80);
 const lastAction = ref("");
@@ -137,10 +138,10 @@ async function resetEq() {
     </button>
 
     <!-- Playback transport: pause/resume + stop + exit fullscreen -->
-    <div class="grid grid-cols-3 gap-2">
+    <div class="grid gap-2" :class="roomRole === 'admin' ? 'grid-cols-3' : 'grid-cols-2'">
       <button
         class="rounded-full py-2 text-sm font-semibold text-white transition-all active:scale-[0.96]"
-        style="background: linear-gradient(135deg, #6366f1, #8b5cf6); box-shadow: 0 0 14px rgba(139,92,246,0.40), inset 0 1px 0 rgba(255,255,255,0.18)"
+        style="background: linear-gradient(135deg, #217eaa, #187eab); box-shadow: 0 0 14px rgba(24,126,171,0.40), inset 0 1px 0 rgba(255,255,255,0.18)"
         @click="doPauseToggle"
       >
         {{ paused ? "▶ 继续" : "⏸ 暂停" }}
@@ -153,6 +154,7 @@ async function resetEq() {
         ⏹ 停止
       </button>
       <button
+        v-if="roomRole === 'admin'"
         class="rounded-full py-2 text-xs font-medium text-white/85 transition-all active:scale-[0.96]"
         style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08)"
         @click="doExitFullscreen"

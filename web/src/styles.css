@@ -13,7 +13,7 @@ body {
     "Microsoft YaHei", sans-serif;
   -webkit-tap-highlight-color: transparent;
   color: white;
-  background: #06060c;
+  background: #0b141b;
   /* The drifting neon blobs live in a fixed pseudo-element so they don't
      scroll. We keep them behind everything by making this stacking context
      the root. */
@@ -32,7 +32,7 @@ body::after {
   z-index: 0;
   border-radius: 50%;
   filter: blur(80px);
-  opacity: 0.55;
+  opacity: 0.2;
   will-change: transform;
 }
 body::before {
@@ -42,8 +42,8 @@ body::before {
   right: -20vmax;
   background: radial-gradient(
     circle,
-    rgba(255, 46, 107, 0.55) 0%,
-    rgba(217, 70, 239, 0.35) 35%,
+    rgba(98, 230, 240, 0.55) 0%,
+    rgba(59, 186, 210, 0.35) 35%,
     transparent 70%
   );
   animation: blobDrift 22s ease-in-out infinite alternate;
@@ -56,7 +56,7 @@ body::after {
   background: radial-gradient(
     circle,
     rgba(34, 211, 238, 0.30) 0%,
-    rgba(139, 92, 246, 0.35) 40%,
+    rgba(24, 126, 171, 0.35) 40%,
     transparent 70%
   );
   animation: blobDrift 26s ease-in-out -8s infinite alternate-reverse;
@@ -97,22 +97,18 @@ body::after {
   }
   .btn-primary {
     /* Gradient pill with strong glow — the canonical CTA */
-    @apply btn text-white relative overflow-hidden;
-    background: linear-gradient(
-      135deg,
-      #ff2e6b 0%,
-      #d946ef 60%,
-      #8b5cf6 100%
-    );
+    @apply btn relative overflow-hidden;
+    color: #082129;
+    background: #62e6f0;
     box-shadow:
-      0 0 24px rgba(255, 46, 107, 0.35),
-      0 4px 16px rgba(217, 70, 239, 0.3),
+      0 0 24px rgba(98, 230, 240, 0.35),
+      0 4px 16px rgba(59, 186, 210, 0.3),
       inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
   .btn-primary:hover {
     box-shadow:
-      0 0 36px rgba(255, 46, 107, 0.55),
-      0 6px 22px rgba(217, 70, 239, 0.45),
+      0 0 36px rgba(98, 230, 240, 0.55),
+      0 6px 22px rgba(59, 186, 210, 0.45),
       inset 0 1px 0 rgba(255, 255, 255, 0.25);
   }
   .btn-ghost {
@@ -140,7 +136,7 @@ body::after {
     @apply text-white;
   }
   .tab.active .tab-icon {
-    filter: drop-shadow(0 0 8px rgba(255, 46, 107, 0.65));
+    filter: drop-shadow(0 0 8px rgba(98, 230, 240, 0.65));
   }
   .tab .tab-icon {
     @apply text-xl transition-all;
@@ -172,7 +168,7 @@ body::after {
     transform: translateY(-2px);
     box-shadow:
       0 16px 40px rgba(0, 0, 0, 0.45),
-      0 0 0 1px rgba(255, 46, 107, 0.15),
+      0 0 0 1px rgba(98, 230, 240, 0.15),
       inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
@@ -183,9 +179,9 @@ body::after {
   }
   .input:focus {
     background: rgba(255, 255, 255, 0.07);
-    border-color: rgba(255, 46, 107, 0.5);
-    box-shadow: 0 0 0 4px rgba(255, 46, 107, 0.12),
-      0 0 24px rgba(255, 46, 107, 0.18);
+    border-color: rgba(98, 230, 240, 0.5);
+    box-shadow: 0 0 0 4px rgba(98, 230, 240, 0.12),
+      0 0 24px rgba(98, 230, 240, 0.18);
   }
 
   .chip {
@@ -200,10 +196,11 @@ body::after {
     background: rgba(255, 255, 255, 0.10);
   }
   .chip-active {
-    @apply chip text-white;
-    background: linear-gradient(135deg, #ff2e6b, #d946ef);
+    @apply chip;
+    color: #082129;
+    background: #62e6f0;
     border: 1px solid transparent;
-    box-shadow: 0 0 16px rgba(255, 46, 107, 0.45);
+    box-shadow: 0 0 16px rgba(98, 230, 240, 0.45);
   }
 
   .h-section {
@@ -212,7 +209,7 @@ body::after {
 
   /* Glass surface — phone top header / bottom tab bar */
   .glass-bar {
-    background: rgba(8, 8, 14, 0.55);
+    background: rgba(11, 20, 27, 0.84);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
     border-color: rgba(255, 255, 255, 0.06);
@@ -220,7 +217,7 @@ body::after {
 
   /* Gradient text — used for the wordmark and section accents */
   .text-gradient-brand {
-    background: linear-gradient(135deg, #ffafcb 0%, #ff2e6b 35%, #d946ef 100%);
+    background: linear-gradient(135deg, #c9fbff 0%, #62e6f0 35%, #3bbad2 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -247,9 +244,9 @@ input[type="range"]::-webkit-slider-thumb {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #ff2e6b, #d946ef);
-  box-shadow: 0 0 0 4px rgba(255, 46, 107, 0.18),
-    0 2px 8px rgba(255, 46, 107, 0.45);
+  background: linear-gradient(135deg, #62e6f0, #3bbad2);
+  box-shadow: 0 0 0 4px rgba(98, 230, 240, 0.18),
+    0 2px 8px rgba(98, 230, 240, 0.45);
   cursor: pointer;
 }
 input[type="range"]::-moz-range-track {
@@ -261,10 +258,10 @@ input[type="range"]::-moz-range-thumb {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #ff2e6b, #d946ef);
+  background: linear-gradient(135deg, #62e6f0, #3bbad2);
   border: none;
-  box-shadow: 0 0 0 4px rgba(255, 46, 107, 0.18),
-    0 2px 8px rgba(255, 46, 107, 0.45);
+  box-shadow: 0 0 0 4px rgba(98, 230, 240, 0.18),
+    0 2px 8px rgba(98, 230, 240, 0.45);
   cursor: pointer;
 }
 
@@ -302,7 +299,7 @@ select {
   display: inline-block;
   width: 3px;
   height: 14px;
-  background: linear-gradient(to top, #ff2e6b, #d946ef);
+  background: linear-gradient(to top, #62e6f0, #3bbad2);
   border-radius: 1.5px;
   transform-origin: bottom;
 }

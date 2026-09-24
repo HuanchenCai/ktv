@@ -256,31 +256,31 @@ async function add(song: Song, top: boolean) {
                 : 'translateX(0)',
           background:
             mode === 'online'
-              ? 'linear-gradient(135deg, #06b6d4, #8b5cf6)'
-              : 'linear-gradient(135deg, #ff2e6b, #d946ef)',
+              ? 'linear-gradient(135deg, #06b6d4, #187eab)'
+              : 'linear-gradient(135deg, #62e6f0, #3bbad2)',
           boxShadow:
             mode === 'online'
               ? '0 0 20px rgba(34,211,238,0.45), inset 0 1px 0 rgba(255,255,255,0.2)'
-              : '0 0 20px rgba(255,46,107,0.45), inset 0 1px 0 rgba(255,255,255,0.2)',
+              : '0 0 20px rgba(98,230,240,0.45), inset 0 1px 0 rgba(255,255,255,0.2)',
         }"
       ></span>
       <button
         class="relative z-10 py-2 text-sm font-medium transition-colors"
-        :class="mode === 'popular' ? 'text-white' : 'text-white/55'"
+        :class="mode === 'popular' ? 'text-slate-950' : 'text-white/55'"
         @click="setMode('popular')"
       >
         🔥 热门
       </button>
       <button
         class="relative z-10 py-2 text-sm font-medium transition-colors"
-        :class="mode === 'artists' ? 'text-white' : 'text-white/55'"
+        :class="mode === 'artists' ? 'text-slate-950' : 'text-white/55'"
         @click="setMode('artists')"
       >
         🎤 歌手
       </button>
       <button
         class="relative z-10 py-2 text-sm font-medium transition-colors"
-        :class="mode === 'online' ? 'text-white' : 'text-white/55'"
+        :class="mode === 'online' ? 'text-slate-950' : 'text-white/55'"
         @click="setMode('online')"
       >
         🌐 线上

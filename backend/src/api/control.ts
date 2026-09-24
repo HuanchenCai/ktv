@@ -98,12 +98,24 @@ export async function registerControlRoutes(
   fastify.post<{ Body: { on?: boolean } }>(
     "/api/control/fullscreen",
     async (req) => {
-      const cur = await mpv.isFullscreen();
+      const cur = mpv.prefersFullscreen();
       const next = typeof req.body?.on === "boolean" ? req.body.on : !cur;
       await mpv.setFullscreen(next);
       return { ok: true, fullscreen: next };
     },
   );
+
+  fastify.get("/api/control/display-mode", async () => ({
+    mode: mpv.prefersFullscreen() ? "fullscreen" : "window",
+  }));
+  fastify.post<{ Body: { mode?: string } }>("/api/control/display-mode", async (req, rep) => {
+    const mode = req.body?.mode;
+    if (mode !== "fullscreen" && mode !== "window") {
+      return rep.code(400).send({ error: "mode must be fullscreen or window" });
+    }
+    await mpv.setFullscreen(mode === "fullscreen");
+    return { mode };
+  });
 
   fastify.get("/api/player", async (req) => {
     const state = await mpv.getState();

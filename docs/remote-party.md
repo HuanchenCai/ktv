@@ -25,7 +25,7 @@ OpenList 可以运行在笔记本上，也可以运行在家中的 NAS 上。一
 
 **方案二：连接家中 OpenList / NAS。** 推荐在 NAS 和笔记本之间建立受认证的私有网络，例如 [Tailscale 的 NAS 远程访问方案](https://tailscale.com/docs/use-cases/personal-or-at-home-use/access-nas-media-file-servers)。笔记本用这个网络里的 OpenList 地址；手机不需要加入这个私有网络。已有可信 HTTPS 远程地址也可使用。
 
-**绿联 NAS + MacBook，先做最简外网播放测试：** 在 MacBook 和 NAS 上登录同一 Tailscale 网络；从 [Tailscale 设备列表](https://console.tailscale.com/admin/machines)找到 NAS 的 `100.x.x.x` 地址。MacBook 的 Finder 按 `⌘K`，连接 `smb://100.x.x.x`，输入 NAS 文件共享账号并选择歌曲共享文件夹。确认 Finder 中能打开至少一首视频；外出时让 MacBook 改用手机热点验证。启动 KTV 后，在本机 `http://localhost:8080/admin` 的“导入本地或 NAS 歌曲”处选择已挂载的 NAS 歌曲文件夹，例如 `/Volumes/KTV`，然后搜索、点歌。这个入口只把文件路径与歌曲信息写入本机索引；mpv 播放时直接从 NAS 共享目录读取，歌曲不必复制到笔记本。MacBook 重连网络或重启后，先确认共享目录仍挂载在相同路径；如果短暂断线使歌曲显示不可用，重新扫描即可恢复。[Tailscale 的 macOS 文件共享说明](https://tailscale.com/docs/use-cases/personal-or-at-home-use/access-nas-media-file-servers?tab=macos)
+**绿联 NAS + MacBook，先做最简外网播放测试：** 在 MacBook 和 NAS 上登录同一 Tailscale 网络；从 [Tailscale 设备列表](https://console.tailscale.com/admin/machines)找到 NAS 的 `100.x.x.x` 地址。MacBook 的 Finder 按 `⌘K`，连接 `smb://100.x.x.x`，输入 NAS 文件共享账号并选择歌曲共享文件夹。确认 Finder 中能打开至少一首视频；外出时让 MacBook 改用手机热点验证。启动 KTV 后，在本机 `http://localhost:8080/settings` 的“曲库与歌源”填写已挂载的 NAS 歌曲文件夹，例如 `/Volumes/KTV`，然后搜索、点歌。这个入口只把文件路径与歌曲信息写入本机索引；mpv 播放时直接从 NAS 共享目录读取，歌曲不必复制到笔记本。MacBook 重连网络或重启后，先确认共享目录仍挂载在相同路径；如果短暂断线使歌曲显示不可用，重新扫描即可恢复。[Tailscale 的 macOS 文件共享说明](https://tailscale.com/docs/use-cases/personal-or-at-home-use/access-nas-media-file-servers?tab=macos)
 
 从管理页导入的 NAS 歌曲索引在 KTV 重启后保留，即使 `library_path` 指向笔记本上的另一个目录。换了 NAS 挂载路径时，在管理页重新扫描新路径；旧路径的条目不会被启动过程自动删除。
 
@@ -93,13 +93,26 @@ node -e "console.log(require('node:crypto').randomBytes(24).toString('base64url'
 
 不配置 `room.public_url` 时保留原来的受信任局域网模式，没有房间登录。不要将这种模式直接发布到公网。
 
+## 播放画面与房主操作
+
+KTV 服务和 mpv 运行在连接歌源的播放电脑上。它负责解码和把 MV 送到电视；手机、平板或另一台电脑只打开同一个房间网页，不需要挂载 NAS 或安装播放器。主持人口令进入“设置”，来宾口令可以搜歌、点歌和使用开放的播放控制。电视只显示 mpv 视频窗口，不需要登录房间。
+
+房主在“设置 → 房间与设备 → 播放画面”选以下方式：
+
+- **独立窗口**：采集或共享 mpv 窗口到电视；笔记本桌面仍能打开 KTV 设置。镜像整个桌面会把设置也显示给观众。
+- **电视全屏**：先用独立窗口模式把 mpv 拖到扩展的电视屏幕，再切换全屏。房主可以在手机或平板用主持人口令打开设置和控制播放。
+
+如果只用一块笔记本屏幕，使用独立窗口投屏最方便；如果电视是扩展显示器，mpv 可以在电视全屏，笔记本继续显示设置。不同设备看到的是同一间 KTV 房间和同一条播放队列。当前窗口选择只保持到 KTV 服务重启。
+
+“设置 → 曲库与歌源”可以填写播放电脑上已挂载的 NAS 路径、扫描 OpenList 或百度云，并把不想开放的歌曲设为“已隐藏”。已隐藏的歌仍保留索引和文件，但不会出现在搜歌结果，也不能新加入队列。
+
 ## 开唱顺序
 
 1. 按 README 安装并构建项目；编辑配置后重启 KTV。
-2. 在笔记本打开 `http://localhost:8080/admin`，输入主持人口令。查看 OpenList 是否在线。
-3. 点击“扫描云盘 / NAS 曲库”。多来源可挂载到同一个 OpenList 根目录下。深层目录也支持扫描；较大曲库建议在本机管理页操作，避免隧道请求超时。
-4. 手机关闭 Wi-Fi，用流量打开房间公网地址，输入来宾口令，搜索并点歌。
-5. 笔记本 mpv 播放视频。通过 HDMI 或操作系统已有的无线屏幕镜像把笔记本画面送到电视；应用没有新增电视原生播放器或 Chromecast/AirPlay 协议实现。
+2. 在笔记本打开 `http://localhost:8080/settings`，输入主持人口令。查看 OpenList 是否在线。
+3. 在“曲库与歌源”扫描已挂载 NAS、OpenList 或百度云。多来源可挂载到同一个 OpenList 根目录下。深层目录也支持扫描。
+4. 按上面的两种方式把 mpv 视频窗口送到电视；房主可以同时在自己的手机或平板登录并调整设置。
+5. 来宾手机关闭 Wi-Fi，用流量打开房间公网地址，输入来宾口令，搜索、点歌或选“下一首播放”。应用没有新增电视原生播放器或 Chromecast/AirPlay 协议实现。
 
 ## 视频和磁盘空间
 
@@ -113,7 +126,7 @@ node -e "console.log(require('node:crypto').randomBytes(24).toString('base64url'
 
 ## 出发前验证
 
-- 手机关闭 Wi-Fi 后能登录、搜歌，页面连接状态显示“在线”。
+- 手机关闭 Wi-Fi 后能登录、搜歌，页面连接状态显示“已连接”。
 - 连续点两首，确认暂停、原伴唱、切歌、重唱和重开可用。
 - 关闭家庭 Wi-Fi、改用手机热点后，笔记本仍能访问 NAS 上的 OpenList 并播放。
 - 在真正使用的电视上验证声音输出和屏幕镜像。低延迟优先用 HDMI。

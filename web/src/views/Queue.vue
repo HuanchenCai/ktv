@@ -121,7 +121,7 @@ function statusIcon(state: ManagerTask["state"]): string {
         <span
           v-if="tab === 'queue'"
           class="absolute left-0 right-0 bottom-0 h-0.5 rounded-full"
-          style="background: linear-gradient(90deg, #ff2e6b, #d946ef)"
+          style="background: linear-gradient(90deg, #62e6f0, #3bbad2)"
         ></span>
       </button>
       <button
@@ -140,7 +140,7 @@ function statusIcon(state: ManagerTask["state"]): string {
         <span
           v-if="tab === 'downloads'"
           class="absolute left-0 right-0 bottom-0 h-0.5 rounded-full"
-          style="background: linear-gradient(90deg, #ff2e6b, #d946ef)"
+          style="background: linear-gradient(90deg, #62e6f0, #3bbad2)"
         ></span>
       </button>
     </div>

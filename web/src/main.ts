@@ -7,10 +7,9 @@ import App from "./App.vue";
 import Search from "./views/Search.vue";
 import Queue from "./views/Queue.vue";
 import NowPlaying from "./views/NowPlaying.vue";
-import Admin from "./views/Admin.vue";
+import Settings from "./views/Settings.vue";
 import Tv from "./views/Tv.vue";
 import Artists from "./views/Artists.vue";
-import Library from "./views/Library.vue";
 
 function isWideScreen(): boolean {
   return typeof window !== "undefined" && window.innerWidth >= 1024;
@@ -25,21 +24,20 @@ const router = createRouter({
     { path: "/search", component: Search },
     { path: "/queue", component: Queue },
     { path: "/now", component: NowPlaying },
-    { path: "/admin", component: Admin },
+    { path: "/settings", component: Settings },
+    { path: "/admin", redirect: "/settings?tab=room" },
     { path: "/tv", component: Tv, meta: { layout: "tv" } },
     { path: "/artists", component: Artists },
-    { path: "/library", component: Library },
+    { path: "/library", redirect: "/settings?tab=library" },
   ],
 });
 
-// The phone is the customer's remote — it should NOT see admin features.
-// Block /tv (desktop layout doesn't fit a phone), /admin / /library /
-// /artists (all desktop-oriented) on small viewports. Hiding the nav
-// items isn't enough: a stale bookmark, a typed URL, or a /tv-style
-// deep-link could still drop a phone into one of these pages.
-const DESKTOP_ONLY = new Set(["/tv", "/admin", "/library", "/artists"]);
+// A host can manage the room from a phone or tablet while the playback
+// computer is occupied by the TV. Only the TV and artist directory layouts
+// require a wide viewport; server-side room access still protects settings.
+const DESKTOP_ONLY = new Set(["/tv", "/artists"]);
 router.beforeEach((to) => {
-  if (roomRole.value === "guest" && ["/admin", "/library"].includes(to.path)) return "/search";
+  if (roomRole.value === "guest" && ["/settings", "/admin", "/library"].includes(to.path)) return "/search";
   if (DESKTOP_ONLY.has(to.path) && !isWideScreen()) {
     return { path: "/search", query: to.query };
   }
