@@ -306,6 +306,7 @@ export async function registerSongsRoutes(
       artist?: string;
       lang?: string;
       cached_only?: string;
+      visibility?: string;
     };
   }>("/api/library/songs", async (req) => {
     const page = Math.max(1, parseInt(req.query.page ?? "1", 10) || 1);
@@ -344,6 +345,8 @@ export async function registerSongsRoutes(
       params.push(req.query.lang);
     }
     if (req.query.cached_only === "1") where.push("cached = 1");
+    if (req.query.visibility === "visible") where.push("visible = 1");
+    if (req.query.visibility === "hidden") where.push("visible = 0");
     const whereClause = where.length ? " WHERE " + where.join(" AND ") : "";
 
     const total = (
