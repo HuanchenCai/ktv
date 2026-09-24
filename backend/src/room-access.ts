@@ -55,7 +55,7 @@ export function registerRoomAccess(app: FastifyInstance, room: RoomAccess, port:
       if (!req.roomRole) return rep.code(401).send({ error: "请先输入房间口令" });
       if (req.roomRole === "guest" && (
         (path.startsWith("/api/admin/") && path !== "/api/admin/qrcode" && path !== "/api/admin/qrcode/wifi") ||
-        path === "/api/health" || path.startsWith("/api/library")
+        path === "/api/health" || path.startsWith("/api/library") || path === "/api/control/display-mode"
       )) return rep.code(403).send({ error: "此操作需要主持人口令" });
     }
   });

@@ -105,6 +105,18 @@ export async function registerControlRoutes(
     },
   );
 
+  fastify.get("/api/control/display-mode", async () => ({
+    mode: mpv.prefersFullscreen() ? "fullscreen" : "window",
+  }));
+  fastify.post<{ Body: { mode?: string } }>("/api/control/display-mode", async (req, rep) => {
+    const mode = req.body?.mode;
+    if (mode !== "fullscreen" && mode !== "window") {
+      return rep.code(400).send({ error: "mode must be fullscreen or window" });
+    }
+    await mpv.setFullscreen(mode === "fullscreen");
+    return { mode };
+  });
+
   fastify.get("/api/player", async (req) => {
     const state = await mpv.getState();
     return {

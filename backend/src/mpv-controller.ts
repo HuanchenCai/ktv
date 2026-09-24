@@ -209,7 +209,7 @@ export class MpvController extends EventEmitter {
       // tracks (keep-open=yes pauses on the last frame) and the
       // orchestrator's filler logic keeps something playing if the
       // queue head can't go yet.
-      "--ontop=yes",
+      `--ontop=${this.fullscreen ? "yes" : "no"}`,
       "--title=KTV",
       "--cursor-autohide=1000",
       "--osc=no", // we draw our own controls in the web UI
@@ -419,11 +419,7 @@ export class MpvController extends EventEmitter {
     } catch {
       /* ignore */
     }
-    // Drive fullscreen on every load so:
-    //   1. The first song after boot goes straight to true fullscreen
-    //      (taskbar hidden) without the user double-clicking.
-    //   2. If the user manually exited fullscreen mid-session, the next
-    //      song still re-asserts it.
+    // Respect the host's selected display mode across song changes.
     if (this.fullscreen) {
       try {
         await Promise.resolve(this.mpv.setProperty("fullscreen", true));
@@ -463,10 +459,18 @@ export class MpvController extends EventEmitter {
     }
   }
 
-  /** Toggle/set mpv's fullscreen state directly. */
+  /** Current host preference, including before the first video window exists. */
+  prefersFullscreen(): boolean { return this.fullscreen; }
+
+  /** Switch between a dedicated full-screen display and a capturable window. */
   async setFullscreen(on: boolean): Promise<void> {
+    this.fullscreen = on;
+    if (!on) this.stopFsBurst();
     if (!this.mpv) return;
     try {
+      // In window mode, let the host use other windows without mpv staying
+      // above them. In full-screen mode, keep the playback output visible.
+      await Promise.resolve(this.mpv.setProperty("ontop", on));
       await Promise.resolve(this.mpv.setProperty("fullscreen", on));
     } catch (err) {
       console.warn("[mpv] setFullscreen failed:", err);
