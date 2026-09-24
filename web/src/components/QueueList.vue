@@ -122,7 +122,7 @@ function dlClass(t: DownloadTask | null): string {
               class="text-[11px] text-muted hover:text-white px-2 py-1 rounded transition-colors"
               @click="toTop(it)"
             >
-              ↑ 置顶
+              ↑ 下一首
             </button>
             <button
               class="text-[11px] text-muted hover:text-rose-400 px-2 py-1 rounded transition-colors"

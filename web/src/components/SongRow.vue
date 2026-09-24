@@ -30,7 +30,7 @@ function initialFor(s: string): string {
 </script>
 
 <template>
-  <!-- PHONE ROW: portrait as cover thumbnail, big title, accent CTA, "more" disclosure for 置顶 -->
+  <!-- PHONE ROW: keep both queue actions visible. -->
   <li
     v-if="variant !== 'card'"
     class="relative group rounded-2xl overflow-hidden backdrop-blur-md transition-all active:scale-[0.99]"
@@ -86,16 +86,17 @@ function initialFor(s: string): string {
         </div>
       </div>
 
-      <!-- Single round CTA, secondary "top" tucked into an icon button -->
+      <!-- Queue normally or play this song next. -->
       <div class="flex items-center gap-1.5 shrink-0">
         <button
           v-if="!queued"
-          aria-label="置顶"
-          class="w-9 h-9 rounded-full grid place-items-center text-white/70 hover:text-white transition-colors"
+          aria-label="下一首播放"
+          title="下一首播放"
+          class="h-9 px-2.5 rounded-full grid place-items-center text-xs text-white/80 hover:text-white transition-colors"
           style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08)"
           @click="onTop(song)"
         >
-          ↑
+          下一首
         </button>
         <button
           class="rounded-full px-4 h-9 font-medium text-sm transition-all active:scale-[0.95]"
@@ -163,7 +164,7 @@ function initialFor(s: string): string {
         :disabled="queued"
         @click="onTop(song)"
       >
-        置顶
+        下一首
       </button>
     </div>
   </li>

@@ -260,7 +260,7 @@ const showInstallHint = computed(
           <div class="flex items-center gap-1.5 shrink-0">
             <button
               v-if="!queuedIds.has(`${r.source}/${r.video_id}`)"
-              aria-label="置顶"
+              aria-label="下一首播放"
               class="w-9 h-9 rounded-full grid place-items-center text-white/70 hover:text-white transition-colors"
               style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08)"
               @click="pickResult(r, true)"
