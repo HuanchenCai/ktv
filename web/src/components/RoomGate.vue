@@ -6,7 +6,7 @@ import { roomRole, roomEnabled } from "../lib/session";
 const router = useRouter();
 async function enter(role: "admin" | "guest" | null) {
   roomRole.value = role;
-  if (role === "guest" && ["/admin", "/library"].includes(location.pathname)) await router.replace("/search");
+  if (role === "guest" && ["/settings", "/admin", "/library"].includes(location.pathname)) await router.replace("/search");
   ready.value = !!role;
 }
 
