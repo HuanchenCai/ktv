@@ -1,374 +1,116 @@
-<div align="center">
+# 寰宇 KTV
 
-# 寰宇KTV
+把一台连接电视的电脑变成聚会 KTV：大家用手机扫码点歌，电脑从自己的 NAS、网盘或本地文件读取 MV，再由 mpv 播放到电视。房主可用手机或平板管理曲库和播放窗口，来宾使用单独的房间口令。
 
-**把家庭服务器或随身笔记本变成 KTV 包厢**
+> 当前是需要自行运行的 alpha 版本，还没有可双击安装的 Mac/Windows 安装包，也不是托管云服务。开唱时，播放电脑、歌源和公网入口都需要保持可用。本项目不提供歌曲文件。
 
-为海外华人 homelab 玩家做的自部署 KTV 引擎。
-手机扫码点歌 · 真 MV 跟唱 · 多连接器 · 不订阅 · 不限制 IP
+## 它怎样工作
 
-[![License](https://img.shields.io/badge/license-TBD-orange)](#-许可与商业模式)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)](#-快速开始)
-[![Node](https://img.shields.io/badge/node-%E2%89%A522-green)](#0-前置)
-[![Status](https://img.shields.io/badge/status-alpha-yellow)](#%EF%B8%8F-roadmap)
-
-<sub>English summary at bottom · 中文为主</sub>
-
-</div>
-
----
-
-> [!NOTE]
-> **这是一个 self-hosted 项目**，不是托管云服务。播放主机在开唱期间需要开机；歌曲可来自云盘、NAS 或本地文件。也可以带笔记本出门，连接家中 NAS，并让朋友用手机流量点歌，见[便携聚会与远程访问指南](docs/remote-party.md)。
->
-> 如果你想要"点开就唱"的零配置 SaaS，这个项目不适合你——
-> Apple Music sing-along 是更省事的选择（虽然没 MV）。
-
-## ✨ 解决什么问题
-
-在海外开 KTV 派对，现有选项都有硬伤：
-
-| 选项 | 痛点 |
-|---|---|
-| Apple Music sing-along | 没 MV，气氛不对 |
-| 唱吧 / 全民K歌 | 月度订阅 + 需要国内 IP |
-| YouTube + 蓝牙麦 | 大家不能各自手机点歌、不能共建队列 |
-| 商业 KTV 机顶盒 | 国内才有，不能定制曲库 |
-| 自己拼 mpv + 字幕 | 一晚上就过去了 |
-
-**寰宇KTV 把国内商业 KTV 的"多人扫码点歌 + 排队 + 原伴切换"完整搬到你的家庭服务器上**，曲库连接你已有的百度盘 / NAS / Jellyfin / 本地文件夹。
-
-## 🎬 Demo
-
-<!-- TODO: 放上一段 30 秒 demo GIF 或 YouTube 链接 -->
-
-> 演示视频准备中。届时这里会嵌入：
-> - 30 秒 — 客厅场景：手机扫码 → 搜歌 → MV 跳出 → 副歌
-> - 60 秒 — 完整流程演示（搜索、排队、原伴切换、跨设备点歌）
-
-## 🧐 这适合你吗？
-
-打勾越多越合适：
-
-- [ ] 你有一台 7×24 开机的电脑（Mac mini / NUC / 群晖 / OmniOS / 任意 NAS）
-- [ ] 你有百度网盘 SVIP，或愿意开一个（~30 元/月）
-- [ ] 或者你已经把曲库放在自己的 NAS / Jellyfin / Emby 上
-- [ ] 你能接受花 30 分钟一次性配置
-- [ ] 朋友常来家里聚
-
-如果打勾 ≥ 3，继续往下看。
-如果打勾 ≤ 2，先 [star 一下](https://github.com/HuanchenCai/ktv) 关注后续，等 Pro 一体机版本（在规划中）。
-
-## 🏗️ 架构
-
-```
-                    📱 手机（每人一台，扫码进入）
-                          │
-                          │  Wi-Fi
-                          ▼
-              ┌──────────────────────────┐
-              │   寰宇KTV Backend         │
-              │   Fastify · Node 22+      │  ← 单进程编排
-              │   ┌────────────────────┐  │
-              │   │  SQLite 曲库索引   │  │
-              │   │  + 队列状态       │  │
-              │   └────────────────────┘  │
-              └──┬──────────────────┬─────┘
-                 │                  │
-                 │ HTTP REST       │ IPC
-                 ▼                  ▼
-        ┌──────────────┐      ┌──────────┐
-        │  OpenList    │      │   mpv    │
-        │ (多源适配)   │      │ (播放器) │
-        └──┬──────┬────┘      └────┬─────┘
-           │      │                │
-           ▼      ▼                ▼
-      百度盘   NAS / SMB     HDMI → TV
-       SVIP   Jellyfin       L/R 声道 → 音响
-              本地文件        (原唱 / 伴奏切换)
+```mermaid
+flowchart LR
+  Guest["来宾手机 · 点歌"] -->|局域网或 HTTPS 房间入口| Host["播放电脑 · KTV 服务<br/>SQLite 索引 / 队列 / 权限"]
+  Admin["房主手机 / 平板 · 设置"] -->|同一房间，主持人口令| Host
+  Host -->|读取 MV| Source["本地 / 已挂载 NAS / OpenList 网盘"]
+  Host -->|控制 mpv| TV["电视 · MV 与声音"]
 ```
 
-**关键设计：**
-- **单进程**：一个 Node 进程编排所有子进程（OpenList、mpv），不用 Docker compose、不用 PM2
-- **存算分离**：OpenList 曲库只扫描索引，默认流式播放；可手动下载少量歌曲作离线备用，不必复制整库
-- **OpenList 抽象层**：百度盘、阿里云盘、WebDAV、SMB、本地，统一接口
-- **L/R 声道切原伴**：商业 KTV 发行版约定 MV 左声道原唱、右声道伴奏，mpv 实时切
+手机传输搜索、点歌和控制请求。MV 从歌源流向播放电脑，再由播放器输出到电视；几 TB 的曲库无需复制到来宾手机。外网房间入口和播放电脑到家中 NAS 的连接是两条独立链路。
 
-## 🚀 快速开始
+## 快速开始：先用一首本地 MV 跑通
 
-### 0. 前置
-
-- **Node 22+**（用了 Node 内置的 `node:sqlite`，省去 native build 痛苦）
-- **mpv**
-  - Windows: `winget install shinchiro.mpv`
-  - macOS: `brew install mpv`
-  - Linux: `apt install mpv` / `pacman -S mpv`
-- **歌源**（任选其一）
-  - 百度网盘 SVIP 账号（推荐，海外可用，最大曲库）
-  - 阿里云盘 / 115 / 夸克
-  - 自己的 NAS（Jellyfin / Emby / SMB / WebDAV）
-  - 本地硬盘里的 MV 文件
-
-### 1. 安装
+需要 Git、Node.js **22 或更新版本**、npm 和 [mpv](https://mpv.io/installation/)。macOS 可用 `brew install mpv`；其他系统请把 mpv 加入 PATH，或在 `config.json` 的 `mpv.binary_path` 填写可执行文件路径。
 
 ```bash
 git clone https://github.com/HuanchenCai/ktv.git
 cd ktv
 npm run setup
-```
-
-`setup` 会做三件事：装依赖、下载 OpenList 二进制到 `bin/`、打包 Vue 前端到 `web/dist/`。
-
-跑一次 doctor 验证环境：
-
-```bash
-npm run doctor
-```
-
-全绿 ✓ 表示可以 `npm start`。
-
-### 2. 启动
-
-```bash
 npm start
 ```
 
-启动时会自动从 `config.example.json` 拷一份 `config.json`，并拉起 OpenList 子进程（监听 `:5244`）、mpv 子进程，Fastify 监听 `:8080`。
+`setup` 安装依赖、下载 OpenList 并构建网页，需要网络。首次 `npm start` 会从 `config.example.json` 创建本机 `config.json`。随后在播放电脑浏览器打开 `http://127.0.0.1:8080/settings`，进入 **曲库与歌源 → 本地或已挂载 NAS**，填写含有 MV 的文件夹路径并点“扫描歌曲”。例如 macOS 的 `/Volumes/KTV`，或 Windows 的 `Z:/KTV`。打开点歌页点一首歌，确认 mpv 能播放。
 
-日志里找这一行（**只在首次启动时打印一次**）：
+只用本地文件、暂时不需要 OpenList 时，可跳过 OpenList 下载：
 
+```bash
+npm ci
+npm --prefix web ci
+npm --prefix web run build
+npm start
 ```
-[openlist] Successfully created the admin user and the initial password is: XXXXXXXX
-```
 
-记下来，下一步要用。
+这种模式下出现 OpenList 二进制未找到的提示是预期的；本地目录导入仍可使用。环境检查可运行 `npm run doctor`。如果 mpv 没有自动找到，在 `config.json` 设置 `mpv.binary_path` 后重启。
 
-### 3. 配置 OpenList（一次性）
+> 歌曲路径必须是**播放电脑**能访问的路径，不是点歌手机的路径。扫描只建立索引，不复制视频。NAS 断线或挂载路径改变后，需恢复连接并重新扫描。
 
-浏览器打开 `http://localhost:5244`，用 `admin` + 上面的密码登录，加两个存储。
+## 配置歌源
 
-<details>
-<summary><b>存储 1：百度盘（只读源）</b></summary>
+| 歌源 | 目前的接入方法 | 播放方式 |
+| --- | --- | --- |
+| 本机目录、已挂载的 NAS 共享文件夹 | 在“曲库与歌源”填写播放电脑上的路径并扫描 | 从该路径读取 |
+| 百度网盘等 OpenList 已挂载存储 | 在 OpenList 授权并挂载，配置扫描根目录后扫描 | 经 OpenList 获取链接；行为取决于驱动 |
+| 百度网盘旧版直连 | 本机配置 BDUSS/STOKEN 后使用“百度盘扫描” | 按需下载后播放；属兼容路径 |
+| YouTube / 抖音在线视频 | 安装并配置 yt-dlp，使用点歌页“线上” | 从视频源播放；可按配置关闭 |
 
-- 管理 → 存储 → 添加
-- 驱动：`BaiduNetdisk` 或 `Baidu.OnlineAPI`（推荐 OAuth，免 cookie）
-- 挂载路径：`/baidu`
-- 按指引扫码登录百度账号（SVIP）
+**NAS：** MacBook 不在家时，可先用 Tailscale 连到家中 NAS，再用 Finder 连接 SMB 共享，确认 `/Volumes/KTV` 中的视频可打开。Windows 可用已挂载的盘符。绿联管理网页地址不等于歌曲文件夹地址；KTV 读取的是播放电脑实际挂载到的目录。具体步骤见[便携聚会与远程访问指南](docs/remote-party.md)。
 
-</details>
+**OpenList / 百度网盘：** `npm run setup` 已下载 OpenList。默认由 KTV 在本机启动，管理页通常为 `http://127.0.0.1:5244`。在 OpenList 中完成网盘授权和存储挂载，再把其 API token 写入被 Git 忽略的 `config.json`。例如：
 
-<details>
-<summary><b>存储 2：本地缓存（可写目标）</b></summary>
-
-- 驱动：`Local`
-- 挂载路径：`/local`
-- Root folder path：填本地真实路径，例如 `H:\ktv-library` 或 `Z:\KTV`（NAS）
-
-</details>
-
-<details>
-<summary><b>使用 NAS 替代百度盘</b></summary>
-
-把存储 1 换成 `Jellyfin` / `Emby` / `WebDAV` / `SMB` 即可。架构上完全等价——backend 只跟 OpenList API 对话。
-
-</details>
-
-**最后拿 API token**：OpenList 右上角用户菜单 → 我的 → 我的 Token，复制。
-
-### 4. 填 config.json
+第一次登录 OpenList 时，用户名通常为 `admin`；初始密码可从启动终端或 KTV“房间与设备”的提示读取。登录后修改密码，在 OpenList 的账户页面取得 API token。`openlist.root` 应指向已挂载的歌曲目录；如果挂载了多个歌源，可指向它们共同的上级目录。
 
 ```json
 {
-  "library_path": "H:/ktv-library",
-  "baidu_root": "/baidu/KTV",
   "openlist": {
-    "api_token": "粘贴你刚才复制的 token"
+    "root": "/baidu/KTV",
+    "api_token": "只保存在本机的令牌"
   }
 }
 ```
 
-重启 backend（`Ctrl+C` → `npm start`）。
+上面只是需要修改的字段，**不要用片段覆盖整个配置文件**。如果 OpenList 运行在 NAS 等另一台机器上，设置 `openlist.base_url` 为该服务可达的地址，同时设 `openlist.auto_spawn` 为 `false`。歌源、登录和播放器参数保存在播放电脑的 `config.json`，不要提交口令、token 或 NAS 密码到 Git。
 
-### 5. 扫描曲库入索引
+**更多网盘：** OpenList 提供其他存储驱动，但本项目尚未逐一完成阿里云盘、115、夸克等来源的端到端验证。它们属于后续适配与测试计划；README 不把“OpenList 有驱动”当作“KTV 已完整支持”。欢迎提交具体驱动的扫描、播放和断线恢复测试结果。
 
-浏览器打开 `http://localhost:8080/admin`，点 **"开始扫描"**。曲库所有 MV 的元数据（标题/艺人/拼音/大小）几秒到几分钟入 SQLite。
+## 聚会时怎么操作
 
-> 💡 **想跳过百度盘配置先验证播放？**
-> Admin 页有"导入本地文件"按钮：往 `library_path` 丢一两个 `.mkv`，点这个按钮就会作为已缓存歌曲入库。烟雾测试用。
+- **房主：** 用主持人口令在手机、平板或电脑打开同一个房间的“设置”。“曲库与歌源”管理路径、扫描和歌曲可见性；“房间与设备”选择播放窗口。隐藏歌曲不会删除文件，但不会出现在搜歌结果或新点歌队列。
+- **来宾：** 用来宾口令加入，搜索歌曲并点歌；“下一首播放”会将歌曲排到当前歌曲之后。播放页提供暂停、切歌、重唱、音量和原伴唱等操作。来宾不能打开房主设置。
+- **电视：** 只显示 mpv 播放窗口，不需要在电视上登录。房主可选择“独立窗口”并只投放该窗口，继续在笔记本上操作；或先把窗口移到扩展的电视屏幕，再切换“电视全屏”。镜像整个桌面时，笔记本设置也会出现在电视上。
 
-### 6. 开唱
+没有配置公网房间时，应用默认面向可信局域网，不启用房间口令。不要把这个模式直接映射到互联网。
 
-手机扫 admin 页上的二维码（或直接访问 `http://<本机-LAN-IP>:8080`）：
+## 让手机流量也能加入
 
-- **搜歌**：拼音首字母（`zyn` → 只有你）
-- **已点**：队列 + 下载进度 + 置顶/删除
-- **播放**：原唱/伴唱、切歌、重唱、音量
-
-OpenList 扫描的歌曲默认直接流式播放，保留原伴切换；手动下载过的歌曲优先从本地播放。旧的百度 BDUSS 直连索引仍采用下载后播放流程。
-
-## 🎵 歌从哪来？
-
-**我们不分发任何歌曲文件**。三个推荐姿势：
-
-### A. 百度网盘 SVIP（推荐给 90% 用户）
-
-- 海外可用，曲库最大
-- ~30 元/月，按月付
-- 你可以从论坛、TG 频道、网盘资源圈拿到公开分享链，转存到自己账号
-- App 通过 OpenList 直接读你账号里的 MV，按需下载
-
-### B. 自己的 NAS / Jellyfin / Emby
-
-- 已经有 homelab 的玩家最舒服
-- 完全离线 / 高速 / 不依赖外部服务
-- 配 OpenList 的 WebDAV / SMB / Jellyfin 驱动即可
-
-### C. 本地硬盘
-
-- 把 MV 文件丢到 `library_path/`，点 admin 页"导入本地文件"
-- 适合临时演示或小曲库场景
-
-> ⚖️ **法律说明**：寰宇KTV 是一个本地播放工具，不存储、不分发任何受版权保护的内容。
-> 用户自行准备并合法使用所播放的素材，相关责任由用户承担。
-
-## 💰 许可与商业模式
-
-> 🚧 **状态：alpha，定价和许可证还在最终确定中。**
-
-计划走"**开源核心 + 付费增值**"双轨：
-
-### 🆓 Core（开源，本仓库）
-
-所有核心功能：手机点歌、扫码、队列、原伴切换、多 connector、字幕同步。
-**免费，无限制，永久。**
-
-License：MIT 或 AGPL-3.0（请到 [Issue #1](https://github.com/HuanchenCai/ktv/issues) 投票）
-
-### 💎 Pro（规划中，~$39 一次性 + 可选 $4.99/月）
-
-差异化的"省心"版本：
-
-| 功能 | Core | Pro |
-|---|---|---|
-| 核心点歌引擎 | ✓ | ✓ |
-| 所有 connector | ✓ | ✓ |
-| Mac 公证签名版（免"未识别开发者"） | ✗ | ✓ |
-| Windows 数字签名版 | ✗ | ✓ |
-| 自动更新 | ✗ | ✓ |
-| 内置 GUI 安装器（不用命令行） | ✗ | ✓ |
-| 优先 issue 处理 | ✗ | ✓ |
-| **歌库索引订阅** ($4.99/mo) | ✗ | ✓ |
-| - 每周新增热门歌元数据 | | |
-| - 时间轴校对过的字幕库 | | |
-| - 歌曲别名 / 拼音 / 多版本去重 | | |
-
-歌库订阅卖的是**劳动成果**（索引、字幕、元数据），不是歌曲文件本身——所有歌曲依然由用户自己的网盘提供。
-
-**预约通知**：[Lemon Squeezy 商品页 TODO]
-
-## ❓ FAQ
-
-<details>
-<summary><b>海外用百度盘速度够吗？</b></summary>
-
-速度取决于地区、运营商、账号和来源，不能保证固定缓冲时间。流式播放要求持续带宽跟得上视频码率；常唱的歌可以提前手动下载。下载目录没有自动 LRU 清理或容量上限，需自行管理空间。
-
-如果你那边百度盘慢得离谱，建议改用阿里云盘或自建 NAS。
-
-</details>
-
-<details>
-<summary><b>必须用百度盘吗？</b></summary>
-
-不是。OpenList 支持百度、阿里、115、夸克、Jellyfin、Emby、WebDAV、SMB、Local 等几十种驱动。
-任意能存视频的地方都能接。
-
-</details>
-
-<details>
-<summary><b>支持哪些平台？</b></summary>
-
-Backend：Mac / Windows / Linux（Node 22+ 跑得起来都行）。
-手机端：浏览器即可，iOS / Android 都行，**不需要装 app**。
-
-</details>
-
-<details>
-<summary><b>字幕从哪来？</b></summary>
-
-商业 KTV MV 通常自带内嵌字幕（硬字幕），mpv 直接播。如果是裸视频，可以放同名 `.ass` / `.lrc` / `.srt` 字幕文件，mpv 自动识别。
-
-Pro 版的歌库订阅会提供已校对的字幕。
-
-</details>
-
-<details>
-<summary><b>原唱 / 伴奏怎么切？</b></summary>
-
-商业 KTV 发行的 MV 通常左声道原唱、右声道伴奏（或反过来）。app 在播放界面提供"原唱 / 伴奏"按钮，实时切 mpv 的 `audio-channels`。
-
-不同发行版约定不一致（B'in、雷石、视易），UI 提供"这首 L/R 反了"按钮按首歌校正，校正结果存到 SQLite。
-
-</details>
-
-<details>
-<summary><b>支持评分动画 / 麦克风升降调吗？</b></summary>
-
-Roadmap M2，还没做。
-
-</details>
-
-<details>
-<summary><b>可以商用吗？开 KTV 店行不行？</b></summary>
-
-技术上行，法律上**自负**。这个项目针对的是"家庭/朋友聚会"自部署场景。商用涉及音乐授权、表演权等版权问题，跟本项目无关。
-
-</details>
-
-## 🗺️ Roadmap
-
-- [x] **M0** — Brown M&M 验证（OpenList 百度盘 + mpv 切声道 + Fastify WebSocket）
-- [x] **M1** — 手机扫码 + 搜歌 + 队列 + 下载调度 + 原伴切换
-- [ ] **M2** — 评分动画 + 麦克风预处理（混响 / 升降调）
-- [ ] **M3** — 多 connector connector matrix 测试（阿里云盘、115、Emby、Jellyfin）
-- [ ] **M4** — Pro 版打包（Mac/Win 签名 + GUI 安装器 + 自动更新）
-- [ ] **M5** — 歌库订阅服务（索引同步 + 字幕库）
-- [ ] **M6** — AirPlay / Chromecast 输出（不依赖 HDMI）
-
-## 🤝 社区
-
-- **GitHub Issues** — bug、feature request
-- **GitHub Discussions** — 配置疑问、connector 适配
-- **预约 Pro 版通知** — [Lemon Squeezy TODO]
-- **作者** — [@HuanchenCai](https://github.com/HuanchenCai) · 在海外想唱歌的工程师 · 也会唱一两首
-
-## 🛠️ 开发命令
+播放电脑需要一个指向 `http://127.0.0.1:8080` 的 **HTTPS 公网入口**，支持 WebSocket。可以使用自己的域名与隧道；快速试验可使用 Cloudflare 临时隧道。先让 KTV 停止运行，在另一个终端取得 `https://…trycloudflare.com` 地址，然后配置房间并启动。下面的 `example.trycloudflare.com` 必须替换为隧道实际显示的完整地址：
 
 ```bash
-npm start            # 生产启动
-npm run dev          # backend watch 模式
-cd web && npm run dev  # web dev server (Vite), 代理到 :8080
-npm test             # vitest 单元测试
-npm run typecheck    # TS 类型检查
+cloudflared tunnel --url http://127.0.0.1:8080
+# 回到项目目录，在另一个终端执行：
+npm run room:configure -- https://example.trycloudflare.com
+npm start
 ```
 
-## ⚠️ 已知限制
+`room:configure` 会生成**来宾口令**和不同的**主持人口令**，写入本机 `config.json`。把房间网址和来宾口令发给朋友；主持人口令只留给房主。临时隧道地址变化后，需重新配置并重启 KTV。手机关闭 Wi-Fi 后测试登录、搜歌、点歌和控制。家中 NAS 若在私有网络，播放电脑还须单独连通它；来宾手机不需要登录 Tailscale。完整步骤、Tailscale／NAS 挂载、常见 Bad Gateway 排查见[远程访问指南](docs/remote-party.md)。
 
-- **OpenList 的百度盘驱动可能被百度风控**，token/cookie 失效要重新授权
-- **跨海外 IP 限速**：欧美到百度服务器速度看 ISP，瑞典实测 SVIP 1-3 MB/s
-- **mpv 切声道依赖发行商约定**：不同 KTV 发行版 L/R 不统一，UI 提供按首歌校正
+`room.public_url` 只告诉 KTV 房间地址及允许的来源，**不会替你创建隧道或云服务器**。当前仍由播放电脑运行服务和 mpv；把静态网页单独部署到 GitHub Pages 不会让它完成播放。
 
----
+## 常见问题
 
-## English Summary
+**几 TB 歌曲会下载到笔记本吗？** 本地／NAS 扫描只保存索引。OpenList 来源通常在点歌时取得播放链接；手动缓存或旧版百度直连会占用 `library_path` 的空间，需自行管理。真实播放速度取决于歌源、NAS 上行和当前网络。
 
-**HuanyuKTV** is a self-hosted karaoke engine for the overseas Chinese homelab community. Phone-based QR code song requesting, real music videos (not just lyrics), multi-source connector (Baidu Netdisk, NAS, Jellyfin, local files), original/karaoke channel toggle.
+**手机能直接播放 MV 到电视吗？** 当前架构中手机是点歌和控制终端，播放电脑运行 mpv 并负责电视输出。手机网页本身不是独立的电视播放器。
 
-This is **not** a SaaS — the playback host must run during the party, and you provide the media source. A travelling laptop can stream an OpenList library from home while guests join through an authenticated HTTPS room. See the [remote party guide](docs/remote-party.md).
+**可以下载双击安装吗？** 目前需要 Git、Node 和 mpv 从源码启动。安装包、自动更新和更多歌源验证仍在计划中。
 
-We do **not** distribute any copyrighted content. Users source their own media.
+**歌词和原伴唱怎么来？** MV 内已有的字幕可直接显示。原伴切换依赖视频的声道或音轨结构；不是每个来源都具备独立的伴奏声道。
 
-**Status**: alpha. Pricing under design — core will be open source (MIT or AGPL, TBD), Pro tier (Mac/Win signed builds, auto-update, indexed song library subscription) coming Q1.
+## 开发与状态
 
-Issues and PRs welcome.
+```bash
+npm test
+npm run typecheck
+npm --prefix web run build
+```
 
+当前重点是跨网络的真实聚会测试、播放窗口体验和歌源兼容性。下一步包括更多网盘驱动的端到端验证、安装包与部署简化；这些尚未标为已完成。项目目前未附带正式许可证文件，使用或再发布前请先联系仓库维护者。
+
+English: Huanyu KTV is a self-hosted karaoke system. A playback computer reads your own NAS, cloud drive or local MV library and sends video to a TV through mpv. Guests request songs from their phones; hosts manage sources and playback with a separate room code. A remote party uses an HTTPS room entrance for control and a separate connection from the playback computer to its media source. See the [remote party guide](docs/remote-party.md).
