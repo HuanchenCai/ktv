@@ -98,7 +98,7 @@ export async function registerControlRoutes(
   fastify.post<{ Body: { on?: boolean } }>(
     "/api/control/fullscreen",
     async (req) => {
-      const cur = await mpv.isFullscreen();
+      const cur = mpv.prefersFullscreen();
       const next = typeof req.body?.on === "boolean" ? req.body.on : !cur;
       await mpv.setFullscreen(next);
       return { ok: true, fullscreen: next };

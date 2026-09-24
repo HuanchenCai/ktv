@@ -470,10 +470,13 @@ export class MpvController extends EventEmitter {
     try {
       // In window mode, let the host use other windows without mpv staying
       // above them. In full-screen mode, keep the playback output visible.
-      await Promise.resolve(this.mpv.setProperty("ontop", on));
+      await Promise.resolve(this.mpv.setProperty("ontop", on)).catch((err) => {
+        console.warn("[mpv] setOntop failed:", err);
+      });
       await Promise.resolve(this.mpv.setProperty("fullscreen", on));
     } catch (err) {
       console.warn("[mpv] setFullscreen failed:", err);
+      throw err;
     }
   }
 
