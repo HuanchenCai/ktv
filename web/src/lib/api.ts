@@ -207,6 +207,15 @@ export const api = {
       },
     );
   },
+  displayMode() {
+    return request<{ mode: "fullscreen" | "window" }>("/api/control/display-mode");
+  },
+  setDisplayMode(mode: "fullscreen" | "window") {
+    return request<{ mode: "fullscreen" | "window" }>("/api/control/display-mode", {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    });
+  },
   setVolume(volume: number) {
     return request<{ ok: true; volume: number }>("/api/control/volume", {
       method: "POST",

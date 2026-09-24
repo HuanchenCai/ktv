@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useRoute, RouterLink } from "vue-router";
 import Admin from "./Admin.vue";
 import Library from "./Library.vue";
+import DisplayMode from "../components/DisplayMode.vue";
 
 const route = useRoute();
 const section = computed(() => route.query.tab === "room" ? "room" : "library");
@@ -20,6 +21,9 @@ const section = computed(() => route.query.tab === "room" ? "room" : "library");
       <RouterLink to="/settings?tab=room" class="chip chip-default" :class="{ '!border-accent !text-white': section === 'room' }">房间与设备</RouterLink>
     </nav>
     <Library v-if="section === 'library'" />
-    <Admin v-else />
+    <div v-else class="space-y-4">
+      <DisplayMode />
+      <Admin />
+    </div>
   </div>
 </template>
