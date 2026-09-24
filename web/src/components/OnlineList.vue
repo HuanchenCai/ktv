@@ -282,9 +282,9 @@ const showInstallHint = computed(
                     }
                   : {
                       background:
-                        'linear-gradient(135deg, #ff2e6b, #d946ef)',
+                        'linear-gradient(135deg, #62e6f0, #3bbad2)',
                       boxShadow:
-                        '0 0 18px rgba(255,46,107,0.45), inset 0 1px 0 rgba(255,255,255,0.2)',
+                        '0 0 18px rgba(98,230,240,0.45), inset 0 1px 0 rgba(255,255,255,0.2)',
                     }
               "
               :disabled="queuedIds.has(`${r.source}/${r.video_id}`)"

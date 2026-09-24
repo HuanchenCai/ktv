@@ -74,7 +74,7 @@ onMounted(() => refresh());
       <div class="text-center space-y-2">
         <div
           class="text-[10px] uppercase tracking-[0.2em] font-bold inline-block px-2 py-0.5 rounded-full"
-          style="background: rgba(255,46,107,0.15); color: #ff7aa1; border: 1px solid rgba(255,46,107,0.35)"
+          style="background: rgba(98,230,240,0.15); color: #9bf2f5; border: 1px solid rgba(98,230,240,0.35)"
         >
           ② 点歌
         </div>
@@ -122,7 +122,7 @@ onMounted(() => refresh());
         />
       </div>
       <div class="space-y-1">
-        <div class="text-[9px] font-bold" style="color: #ff7aa1">② 点歌</div>
+        <div class="text-[9px] font-bold" style="color: #9bf2f5">② 点歌</div>
         <img
           v-if="qr"
           :src="qr.qr_data_url"

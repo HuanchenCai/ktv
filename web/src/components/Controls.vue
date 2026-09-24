@@ -141,7 +141,7 @@ async function resetEq() {
     <div class="grid gap-2" :class="roomRole === 'admin' ? 'grid-cols-3' : 'grid-cols-2'">
       <button
         class="rounded-full py-2 text-sm font-semibold text-white transition-all active:scale-[0.96]"
-        style="background: linear-gradient(135deg, #6366f1, #8b5cf6); box-shadow: 0 0 14px rgba(139,92,246,0.40), inset 0 1px 0 rgba(255,255,255,0.18)"
+        style="background: linear-gradient(135deg, #217eaa, #187eab); box-shadow: 0 0 14px rgba(24,126,171,0.40), inset 0 1px 0 rgba(255,255,255,0.18)"
         @click="doPauseToggle"
       >
         {{ paused ? "▶ 继续" : "⏸ 暂停" }}

@@ -154,8 +154,8 @@ defineExpose({ song, vocalChannel });
             class="h-full rounded-full transition-all"
             :style="{
               width: progressPct + '%',
-              background: 'linear-gradient(to right, #ff2e6b, #d946ef)',
-              boxShadow: '0 0 8px rgba(255,46,107,0.6)'
+              background: 'linear-gradient(to right, #62e6f0, #3bbad2)',
+              boxShadow: '0 0 8px rgba(98,230,240,0.6)'
             }"
           ></div>
         </div>
@@ -180,12 +180,12 @@ defineExpose({ song, vocalChannel });
             background:
               repeating-radial-gradient(circle, rgba(255,255,255,0.04) 0 1px, transparent 1px 3px),
               radial-gradient(circle at center, #18182a 35%, #0b0b14 100%);
-            box-shadow: 0 0 24px rgba(217,70,239,0.25), inset 0 0 12px rgba(0,0,0,0.6);
+            box-shadow: 0 0 24px rgba(59,186,210,0.25), inset 0 0 12px rgba(0,0,0,0.6);
           "
         ></div>
         <div
           class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full"
-          style="background: linear-gradient(135deg, #ff2e6b, #d946ef)"
+          style="background: linear-gradient(135deg, #62e6f0, #3bbad2)"
         ></div>
       </div>
       <div class="text-base font-medium text-white/85">空闲中</div>

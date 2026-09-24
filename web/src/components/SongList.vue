@@ -256,12 +256,12 @@ async function add(song: Song, top: boolean) {
                 : 'translateX(0)',
           background:
             mode === 'online'
-              ? 'linear-gradient(135deg, #06b6d4, #8b5cf6)'
-              : 'linear-gradient(135deg, #ff2e6b, #d946ef)',
+              ? 'linear-gradient(135deg, #06b6d4, #187eab)'
+              : 'linear-gradient(135deg, #62e6f0, #3bbad2)',
           boxShadow:
             mode === 'online'
               ? '0 0 20px rgba(34,211,238,0.45), inset 0 1px 0 rgba(255,255,255,0.2)'
-              : '0 0 20px rgba(255,46,107,0.45), inset 0 1px 0 rgba(255,255,255,0.2)',
+              : '0 0 20px rgba(98,230,240,0.45), inset 0 1px 0 rgba(255,255,255,0.2)',
         }"
       ></span>
       <button

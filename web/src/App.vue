@@ -148,7 +148,7 @@ const wsDotClass = computed(() => ({
           <span
             v-if="tab === 'search'"
             class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full"
-            style="background: linear-gradient(90deg, #ff2e6b, #d946ef)"
+            style="background: linear-gradient(90deg, #62e6f0, #3bbad2)"
           ></span>
         </RouterLink>
         <RouterLink to="/queue" class="tab" :class="{ active: tab === 'queue' }">
@@ -156,7 +156,7 @@ const wsDotClass = computed(() => ({
           <span
             v-if="tab === 'queue'"
             class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full"
-            style="background: linear-gradient(90deg, #ff2e6b, #d946ef)"
+            style="background: linear-gradient(90deg, #62e6f0, #3bbad2)"
           ></span>
         </RouterLink>
         <RouterLink to="/now" class="tab" :class="{ active: tab === 'now' }">
@@ -164,7 +164,7 @@ const wsDotClass = computed(() => ({
           <span
             v-if="tab === 'now'"
             class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full"
-            style="background: linear-gradient(90deg, #ff2e6b, #d946ef)"
+            style="background: linear-gradient(90deg, #62e6f0, #3bbad2)"
           ></span>
         </RouterLink>
         <RouterLink v-if="roomRole === 'admin'" to="/settings" class="tab" :class="{ active: tab === 'settings' }">

@@ -104,8 +104,8 @@ function initialFor(s: string): string {
           :style="queued
             ? { background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.10)' }
             : {
-                background: 'linear-gradient(135deg, #ff2e6b, #d946ef)',
-                boxShadow: '0 0 18px rgba(255,46,107,0.45), inset 0 1px 0 rgba(255,255,255,0.2)',
+                background: 'linear-gradient(135deg, #62e6f0, #3bbad2)',
+                boxShadow: '0 0 18px rgba(98,230,240,0.45), inset 0 1px 0 rgba(255,255,255,0.2)',
               }"
           :disabled="queued"
           @click="onQueue(song)"
