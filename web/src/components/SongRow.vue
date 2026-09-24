@@ -100,7 +100,7 @@ function initialFor(s: string): string {
         </button>
         <button
           class="rounded-full px-4 h-9 font-medium text-sm transition-all active:scale-[0.95]"
-          :class="queued ? 'text-white/50' : 'text-white'"
+          :class="queued ? 'text-white/50' : 'text-slate-950'"
           :style="queued
             ? { background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.10)' }
             : {

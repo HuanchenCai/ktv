@@ -261,18 +261,18 @@ const showInstallHint = computed(
             <button
               v-if="!queuedIds.has(`${r.source}/${r.video_id}`)"
               aria-label="下一首播放"
-              class="w-9 h-9 rounded-full grid place-items-center text-white/70 hover:text-white transition-colors"
+              class="h-9 px-2.5 rounded-full grid place-items-center text-xs text-white/80 hover:text-white transition-colors"
               style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08)"
               @click="pickResult(r, true)"
             >
-              ↑
+              下一首
             </button>
             <button
               class="rounded-full px-4 h-9 font-medium text-sm transition-all active:scale-[0.95]"
               :class="
                 queuedIds.has(`${r.source}/${r.video_id}`)
                   ? 'text-white/50'
-                  : 'text-white'
+                  : 'text-slate-950'
               "
               :style="
                 queuedIds.has(`${r.source}/${r.video_id}`)

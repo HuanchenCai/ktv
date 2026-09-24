@@ -266,21 +266,21 @@ async function add(song: Song, top: boolean) {
       ></span>
       <button
         class="relative z-10 py-2 text-sm font-medium transition-colors"
-        :class="mode === 'popular' ? 'text-white' : 'text-white/55'"
+        :class="mode === 'popular' ? 'text-slate-950' : 'text-white/55'"
         @click="setMode('popular')"
       >
         🔥 热门
       </button>
       <button
         class="relative z-10 py-2 text-sm font-medium transition-colors"
-        :class="mode === 'artists' ? 'text-white' : 'text-white/55'"
+        :class="mode === 'artists' ? 'text-slate-950' : 'text-white/55'"
         @click="setMode('artists')"
       >
         🎤 歌手
       </button>
       <button
         class="relative z-10 py-2 text-sm font-medium transition-colors"
-        :class="mode === 'online' ? 'text-white' : 'text-white/55'"
+        :class="mode === 'online' ? 'text-slate-950' : 'text-white/55'"
         @click="setMode('online')"
       >
         🌐 线上
