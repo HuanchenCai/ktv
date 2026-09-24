@@ -8,6 +8,7 @@ import {
   makeCloudPath,
   type OnlineSource,
   type OnlineConfig,
+  type OnlineResult,
 } from "../online-source.ts";
 import { toPinyinInitials } from "../pinyin.ts";
 
@@ -24,6 +25,12 @@ export async function registerOnlineRoutes(
   orchestrator: Orchestrator,
   cfg: OnlineConfig,
 ): Promise<void> {
+  const hiddenSong = db.prepare("SELECT visible FROM songs WHERE cloud_path = ?");
+  const visibleResults = (results: OnlineResult[]) => results.filter((result) => {
+    const row = hiddenSong.get(makeCloudPath(result.source, result.video_id)) as { visible: number } | undefined;
+    return row?.visible !== 0;
+  });
+
   fastify.get("/api/online/status", async () => {
     return {
       enabled: cfg.enabled,
@@ -44,7 +51,7 @@ export async function registerOnlineRoutes(
     }
     try {
       const results = await search(cfg, source, query.trim(), limit ?? 20);
-      return { results };
+      return { results: visibleResults(results) };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return rep.code(500).send({ error: msg });
@@ -58,7 +65,7 @@ export async function registerOnlineRoutes(
       const { source, limit } = req.body ?? { source: "yt" };
       try {
         const results = await hotlist(cfg, source, limit ?? 50);
-        return { results };
+        return { results: visibleResults(results) };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return rep.code(500).send({ error: msg });
@@ -127,9 +134,13 @@ export async function registerOnlineRoutes(
     const row = db
       .prepare("SELECT id FROM songs WHERE cloud_path = ?")
       .get(cloudPath) as { id: number };
-    const item = orchestrator.enqueue(row.id, body.added_by ?? null, {
-      top: !!body.top,
-    });
-    return { queued: item };
+    try {
+      const item = orchestrator.enqueue(row.id, body.added_by ?? null, {
+        top: !!body.top,
+      });
+      return { queued: item };
+    } catch (err) {
+      return rep.code(400).send({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
 }
