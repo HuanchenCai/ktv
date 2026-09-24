@@ -31,7 +31,7 @@ async function choose(next: Mode) {
     <div class="grid gap-2 sm:grid-cols-2">
       <button type="button" class="rounded-xl border p-4 text-left transition-colors" :class="mode === 'fullscreen' ? 'border-accent bg-accent/10' : 'border-border bg-panel'" :disabled="busy" @click="choose('fullscreen')">
         <strong class="block">电视全屏</strong>
-        <span class="mt-1 block text-xs text-muted">把播放器移到扩展的电视屏幕后使用。</span>
+        <span class="mt-1 block text-xs text-muted">先在独立窗口模式把播放器拖到扩展的电视，再切换为全屏。</span>
       </button>
       <button type="button" class="rounded-xl border p-4 text-left transition-colors" :class="mode === 'window' ? 'border-accent bg-accent/10' : 'border-border bg-panel'" :disabled="busy" @click="choose('window')">
         <strong class="block">独立窗口</strong>
