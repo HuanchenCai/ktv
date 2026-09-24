@@ -16,6 +16,9 @@ async function setup(enabled = true) {
   await app.register(websocket);
   app.get("/api/songs", async () => ({ songs: [] }));
   app.post("/api/control/skip", async () => ({ ok: true }));
+  app.get("/api/control/display-mode", async () => ({ mode: "fullscreen" }));
+  app.post("/api/control/display-mode", async () => ({ mode: "window" }));
+  app.post("/api/control/fullscreen", async () => ({ ok: true }));
   app.get("/api/admin/openlist-status", async () => ({ initial_password: "never-share" }));
   app.post("/api/admin/import-local", async () => ({ ok: true }));
   app.get("/ws", { websocket: true }, (socket) => { socket.send("connected"); });
@@ -60,11 +63,15 @@ describe("public room access", () => {
       expect(res.body).not.toContain("never-share");
     }
     expect((await app.inject({ method: "POST", url: "/api/admin/import-local", headers: { cookie } })).statusCode).toBe(403);
+    expect((await app.inject({ url: "/api/control/display-mode", headers: { cookie } })).statusCode).toBe(403);
+    expect((await app.inject({ method: "POST", url: "/api/control/display-mode", payload: { mode: "window" }, headers: { cookie, origin: room.public_url } })).statusCode).toBe(403);
+    expect((await app.inject({ method: "POST", url: "/api/control/fullscreen", headers: { cookie, origin: room.public_url } })).statusCode).toBe(403);
   });
   it("allows the host, rejects forged cookies and rejects cross-site commands", async () => {
     const app = await setup();
     const cookie = await login(app, room.admin_code);
     expect((await app.inject({ url: "/api/admin/openlist-status", headers: { cookie } })).statusCode).toBe(200);
+    expect((await app.inject({ url: "/api/control/display-mode", headers: { cookie } })).statusCode).toBe(200);
     expect((await app.inject({ url: "/api/songs", headers: { cookie: cookie + "bad" } })).statusCode).toBe(401);
     expect((await app.inject({ method: "POST", url: "/api/control/skip", headers: { cookie, origin: "https://evil.example" } })).statusCode).toBe(403);
     expect((await app.inject({ method: "POST", url: "/api/session/join", payload: { code: room.guest_code }, headers: { origin: "https://evil.example" } })).statusCode).toBe(403);

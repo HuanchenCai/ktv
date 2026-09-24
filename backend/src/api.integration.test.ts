@@ -14,6 +14,7 @@ import { registerControlRoutes } from "./api/control.ts";
 function makeMpv() {
   const e = new EventEmitter();
   const calls: Array<{ fn: string; args: unknown[] }> = [];
+  let fullscreen = true;
   const stub = {
     on: e.on.bind(e),
     emit: e.emit.bind(e),
@@ -42,6 +43,11 @@ function makeMpv() {
     },
     setVolume: async (...args: unknown[]) => {
       calls.push({ fn: "setVolume", args });
+    },
+    prefersFullscreen: () => fullscreen,
+    setFullscreen: async (on: boolean) => {
+      fullscreen = on;
+      calls.push({ fn: "setFullscreen", args: [on] });
     },
     getState: async () => ({ vocal_channel: "both" as const }),
     shutdown: async () => {},
@@ -229,5 +235,14 @@ describe("API integration (routes against stubbed deps)", () => {
       payload: { volume: 50 },
     });
     expect(res.statusCode).toBe(200);
+  });
+
+  it("lets the host switch the output window and rejects invalid display modes", async () => {
+    expect((await app.inject("/api/control/display-mode")).json()).toEqual({ mode: "fullscreen" });
+    const changed = await app.inject({ method: "POST", url: "/api/control/display-mode", payload: { mode: "window" } });
+    expect(changed.statusCode).toBe(200);
+    expect(changed.json()).toEqual({ mode: "window" });
+    expect((await app.inject("/api/control/display-mode")).json()).toEqual({ mode: "window" });
+    expect((await app.inject({ method: "POST", url: "/api/control/display-mode", payload: { mode: "invalid" } })).statusCode).toBe(400);
   });
 });
