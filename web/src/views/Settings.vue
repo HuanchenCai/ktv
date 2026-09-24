@@ -4,6 +4,7 @@ import { useRoute, RouterLink } from "vue-router";
 import Admin from "./Admin.vue";
 import Library from "./Library.vue";
 import DisplayMode from "../components/DisplayMode.vue";
+import PortraitSettings from "../components/PortraitSettings.vue";
 
 const route = useRoute();
 const section = computed(() => route.query.tab === "room" ? "room" : "library");
@@ -17,10 +18,13 @@ const section = computed(() => route.query.tab === "room" ? "room" : "library");
       <p class="mt-1 text-sm text-muted">在手机或平板管理曲库；播放电脑可专门连接电视。</p>
     </div>
     <nav aria-label="设置分类" class="mb-5 flex gap-2 overflow-x-auto border-b border-border pb-3">
-      <RouterLink to="/settings?tab=library" class="chip chip-default" :class="{ '!border-accent !text-white': section === 'library' }">曲库与歌源</RouterLink>
-      <RouterLink to="/settings?tab=room" class="chip chip-default" :class="{ '!border-accent !text-white': section === 'room' }">房间与设备</RouterLink>
+      <RouterLink to="/settings?tab=library" class="chip chip-default" :class="{ '!border-accent !text-accent': section === 'library' }">曲库与歌源</RouterLink>
+      <RouterLink to="/settings?tab=room" class="chip chip-default" :class="{ '!border-accent !text-accent': section === 'room' }">房间与设备</RouterLink>
     </nav>
-    <Library v-if="section === 'library'" />
+    <div v-if="section === 'library'" class="space-y-4">
+      <Library />
+      <PortraitSettings />
+    </div>
     <div v-else class="space-y-4">
       <DisplayMode />
       <Admin />
