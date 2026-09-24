@@ -113,7 +113,7 @@ export type BaiduScanOptions = {
 export async function scanBaidu(
   db: Db,
   opts: BaiduScanOptions,
-): Promise<{ inserted: number; updated: number; skipped: number; dirs: number }> {
+): Promise<{ inserted: number; updated: number; skipped: number; dirs: number; pruned: number }> {
   if (!opts.bduss) {
     throw new Error("BDUSS is required to scan Baidu Netdisk");
   }

@@ -5,14 +5,29 @@ import { platform } from "node:os";
 import { z } from "zod";
 
 const ConfigSchema = z.object({
+  room: z.object({
+    public_url: z.union([z.literal(""), z.string().url().refine((v) => {
+      const u = new URL(v);
+      return u.protocol === "https:" && u.pathname === "/" && !u.search && !u.hash && !u.username && !u.password;
+    }, "Use an HTTPS origin without path, credentials, query or fragment")]).default(""),
+    guest_code: z.string().default(""),
+    admin_code: z.string().default(""),
+  }).refine((r) => !r.public_url || (r.guest_code.length >= 8 && r.admin_code.length >= 24 && r.guest_code !== r.admin_code),
+    "Public access requires a guest code (8+ characters) and a different admin code (24+ characters)").default({}),
   http_port: z.number().int().positive().default(8080),
+  http_host: z.enum(["127.0.0.1", "0.0.0.0", "::1", "::"]).optional(),
   openlist: z.object({
+    base_url: z.string().url().refine((v) => /^https?:\/\//.test(v) && !new URL(v).username && !new URL(v).password && !new URL(v).search && !new URL(v).hash, "Use an HTTP(S) URL without credentials, query or fragment").optional(),
+    root: z.string().startsWith("/").optional(),
     port: z.number().int().positive().default(5244),
     data_dir: z.string().default("./openlist-data"),
     binary_path: z.string().default("./bin/openlist"),
     auto_spawn: z.boolean().default(true),
     api_token: z.string().default(""),
-  }),
+    username: z.string().default(""),
+    password: z.string().default(""),
+  }).refine((v) => !v.base_url || !v.auto_spawn, "Set openlist.auto_spawn=false when using base_url")
+    .refine((v) => Boolean(v.username) === Boolean(v.password), "Set both openlist.username and openlist.password"),
   library_path: z.string().min(1),
   baidu_root: z.string().default("/baidu"),
   mpv: z.object({
@@ -141,7 +156,7 @@ export function loadConfig(projectRoot?: string): Config {
       data_dir: resolve(root, parsed.openlist.data_dir),
       binary_path: binaryPath,
     },
-    library_path: resolve(parsed.library_path),
+    library_path: resolve(root, parsed.library_path),
   };
 }
 

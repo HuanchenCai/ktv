@@ -1,19 +1,21 @@
 {
   "http_port": 8080,
+  "room": {
+    "public_url": "https://party.example.com",
+    "guest_code": "",
+    "admin_code": ""
+  },
   "openlist": {
-    "port": 5244,
-    "data_dir": "./openlist-data",
-    "binary_path": "./bin/openlist",
-    "auto_spawn": true,
+    "base_url": "https://nas.example.com",
+    "root": "/KTV",
+    "auto_spawn": false,
     "api_token": "",
     "username": "",
     "password": ""
   },
   "library_path": "./library",
-  "baidu_root": "/baidu/KTV",
   "mpv": {
     "binary_path": "",
-    "start_paused": false,
     "fullscreen": true,
     "qr_overlay": true
   },

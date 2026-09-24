@@ -14,6 +14,7 @@ export type QueueViewRow = {
 };
 
 export type OrchestratorEvents = {
+  "player.error": (error: { song_id: number; message: string }) => void;
   "queue.updated": () => void;
   "download.progress": (task: DownloadTask) => void;
   "player.state": (state: {
@@ -39,6 +40,9 @@ export class Orchestrator extends EventEmitter {
   private pollTimer: NodeJS.Timeout | null = null;
   private running = false;
   private currentSongId: number | null = null;
+  private loadingInFlight = false;
+  private playbackRequested = false;
+  private playbackGeneration = 0;
   /**
    * True when mpv is playing a random cached song as filler because the
    * queue head can't play yet (uncached / downloading) or the queue is
@@ -111,6 +115,7 @@ export class Orchestrator extends EventEmitter {
        *  Optional: when missing, online rows are skipped (logged + popped
        *  from the queue so playback doesn't stall). */
       resolveOnlineUrl?: (cloudPath: string) => Promise<string>;
+      resolveLibraryUrl?: (cloudPath: string) => Promise<string>;
     },
   ) {
     super();
@@ -428,6 +433,7 @@ export class Orchestrator extends EventEmitter {
       // Online rows stream straight from the source; DownloadManager has no
       // business pulling them.
       if (song.cloud_path.startsWith("online://")) continue;
+      if (song.cloud_path.startsWith("openlist://")) continue;
       songsToFetch.push(song);
     }
     if (songsToFetch.length === 0) return;
@@ -476,6 +482,20 @@ export class Orchestrator extends EventEmitter {
   }
 
   private async maybeAutoPlay(): Promise<void> {
+    if (this.loadingInFlight) { this.playbackRequested = true; return; }
+    this.loadingInFlight = true;
+    try {
+      await this.loadQueueHead();
+    } finally {
+      this.loadingInFlight = false;
+      if (this.playbackRequested) {
+        this.playbackRequested = false;
+        setImmediate(() => void this.maybeAutoPlay().catch(() => {}));
+      }
+    }
+  }
+
+  private async loadQueueHead(): Promise<void> {
     if (this.userStopped) return;
     // If a real queue song is playing, do nothing. Filler is OK to
     // displace if the queue head is now playable.
@@ -483,26 +503,33 @@ export class Orchestrator extends EventEmitter {
 
     const head = this.db
       .prepare(
-        `SELECT q.song_id FROM queue q ORDER BY q.position ASC LIMIT 1`,
+        `SELECT q.id, q.song_id FROM queue q ORDER BY q.position ASC LIMIT 1`,
       )
-      .get() as { song_id: number } | undefined;
+      .get() as { id: number; song_id: number } | undefined;
     if (!head) return;
 
     const song = this.db
       .prepare("SELECT * FROM songs WHERE id = ?")
       .get(head.song_id) as Song;
     const isOnline = song.cloud_path.startsWith("online://");
+    const isLibrary = song.cloud_path.startsWith("openlist://");
+    const generation = this.playbackGeneration;
+    const stillHead = () => !this.userStopped && generation === this.playbackGeneration &&
+      (this.db.prepare("SELECT id FROM queue ORDER BY position LIMIT 1").get() as { id: number } | undefined)?.id === head.id;
 
     let playablePath: string | null = null;
-    if (isOnline) {
-      if (!this.opts.resolveOnlineUrl) {
+    if (song.cached && song.local_path && existsSync(song.local_path)) {
+      playablePath = song.local_path;
+    } else if (isOnline || isLibrary) {
+      const resolver = isOnline ? this.opts.resolveOnlineUrl : this.opts.resolveLibraryUrl;
+      if (!resolver) {
         console.warn(
           `[orchestrator] online song queued but no resolver wired: ${song.cloud_path}`,
         );
         return;
       }
       try {
-        playablePath = await this.opts.resolveOnlineUrl(song.cloud_path);
+        playablePath = await resolver(song.cloud_path);
       } catch (err) {
         console.error(
           `[orchestrator] failed to resolve online URL for song ${song.id}:`,
@@ -510,12 +537,16 @@ export class Orchestrator extends EventEmitter {
         );
         // Pop it from the queue so the next song can advance — leaving
         // an unresolvable head in place would stall everything.
-        const qh = this.db
-          .prepare("SELECT id FROM queue ORDER BY position ASC LIMIT 1")
-          .get() as { id: number } | undefined;
-        if (qh) this.removeQueueItem(qh.id);
+        if (stillHead()) {
+          this.emit("player.error", { song_id: song.id, message: `无法连接《${song.title}》的来源，已跳过。请检查网络或联系主持人。` });
+          this.removeQueueItem(head.id);
+        }
         // Let the rest of the queue try.
-        void this.maybeAutoPlay().catch(() => {});
+        setImmediate(() => void this.maybeAutoPlay().catch(() => {}));
+        return;
+      }
+      if (!stillHead()) {
+        setImmediate(() => void this.maybeAutoPlay().catch(() => {}));
         return;
       }
     } else {
@@ -547,7 +578,14 @@ export class Orchestrator extends EventEmitter {
       await this.mpv.loadFile(playablePath, song.vocal_channel);
     } catch (err) {
       console.error("[orchestrator] mpv.loadFile failed", err);
+      this.emit("player.error", { song_id: song.id, message: `《${song.title}》播放失败，请检查播放器或重新点歌。` });
       this.currentSongId = null;
+      return;
+    }
+    if (!stillHead()) {
+      this.currentSongId = null;
+      if (this.userStopped) await this.mpv.stop();
+      else this.playbackRequested = true;
       return;
     }
     // Remember the artist so idle filler can continue with this singer.
@@ -564,6 +602,7 @@ export class Orchestrator extends EventEmitter {
    * next enqueue clears the flag.
    */
   async stopPlayback(): Promise<void> {
+    this.playbackGeneration++;
     this.userStopped = true;
     this.armSkipGuard();
     try {
@@ -604,6 +643,7 @@ export class Orchestrator extends EventEmitter {
   }
 
   async skipCurrent(): Promise<void> {
+    this.playbackGeneration++;
     this.armSkipGuard();
     try {
       // Pause (freeze on the current frame, keep fullscreen) rather than stop
@@ -616,7 +656,7 @@ export class Orchestrator extends EventEmitter {
     }
     // Only pop the queue head if a REAL queue song was playing. Filler
     // is ephemeral and isn't represented in the queue.
-    if (this.currentSongId !== null) {
+    if (this.currentSongId !== null || this.loadingInFlight) {
       const head = this.db
         .prepare("SELECT id FROM queue ORDER BY position ASC LIMIT 1")
         .get() as { id: number } | undefined;
@@ -647,9 +687,14 @@ export class Orchestrator extends EventEmitter {
     const song = this.db
       .prepare("SELECT * FROM songs WHERE id = ?")
       .get(this.currentSongId) as Song | undefined;
-    if (!song?.local_path || !existsSync(song.local_path)) return false;
+    if (!song) return false;
     try {
-      await this.mpv.loadFile(song.local_path, song.vocal_channel);
+      const resolver = song.cloud_path.startsWith("openlist://") ? this.opts.resolveLibraryUrl
+        : song.cloud_path.startsWith("online://") ? this.opts.resolveOnlineUrl : undefined;
+      const path = resolver ? await resolver(song.cloud_path) : song.local_path;
+      if (!path || (!resolver && !existsSync(path))) return false;
+      if (this.currentSongId !== song.id || this.userStopped) return false;
+      await this.mpv.loadFile(path, song.vocal_channel);
       return true;
     } catch (err) {
       console.error("[orchestrator] reopen failed", err);
@@ -729,6 +774,7 @@ export class Orchestrator extends EventEmitter {
    * playable in the meantime, maybeAutoPlay promotes it.
    */
   private async maybeStartIdleFallback(): Promise<void> {
+    if (this.loadingInFlight) return;
     if (this.userStopped) return;
     if (this.currentSongId !== null || this.fillerActive) return;
     // If the queue head IS playable now, the regular advance path will

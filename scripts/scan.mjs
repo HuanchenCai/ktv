@@ -166,7 +166,7 @@ async function main() {
   const root = projectRoot();
   const config = loadConfig(root);
 
-  const openlistUrl = `http://localhost:${config.openlist.port}`;
+  const openlistUrl = config.openlist.base_url?.replace(/\/$/, "") ?? `http://localhost:${config.openlist.port}`;
   const openlist = new OpenListClient({
     baseUrl: openlistUrl,
     token: config.openlist.api_token,
@@ -212,7 +212,8 @@ async function main() {
   const dbPath = resolve(root, "data", "ktv.db");
   const db = openDb(dbPath);
 
-  const scanner = new Scanner(db, openlist, config.baidu_root);
+  const sourceRoot = config.openlist.root ?? config.baidu_root;
+  const scanner = new Scanner(db, openlist, sourceRoot);
 
   let result;
   try {
@@ -252,8 +253,8 @@ async function main() {
     const jsonFile = join(outDir, "songs.json");
 
     writeCsv(rows, csvFile);
-    writeMarkdown(rows, mdFile, config.baidu_root);
-    writeJson(rows, jsonFile, config.baidu_root);
+    writeMarkdown(rows, mdFile, sourceRoot);
+    writeJson(rows, jsonFile, sourceRoot);
 
     exportSummary =
       `\n  CSV : ${csvFile}` +

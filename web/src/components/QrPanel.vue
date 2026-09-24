@@ -14,6 +14,7 @@ const qr = ref<{
   url: string;
   qr_data_url: string;
   lan_ips: string[];
+  remote?: boolean;
 } | null>(null);
 const wifi = ref<{
   configured: boolean;
@@ -42,6 +43,7 @@ onMounted(() => refresh());
   >
     <div class="text-center space-y-0.5">
       <div class="text-base font-semibold">扫码点歌</div>
+      <div v-if="qr?.remote" class="text-xs text-white/55">手机流量也能加入 · 需输入房间口令</div>
       <div class="text-[11px] text-white/45 tracking-[0.25em]">SCAN TO SING</div>
     </div>
 
@@ -108,6 +110,7 @@ onMounted(() => refresh());
   <!-- CARD: phone size (compact, dual or single) -->
   <div v-else class="card text-center space-y-2 p-4">
     <div class="font-semibold text-sm">扫码点歌</div>
+    <div v-if="qr?.remote" class="text-xs text-white/55">手机流量也能加入 · 需输入房间口令</div>
     <div v-if="wifi?.configured" class="grid grid-cols-2 gap-2">
       <div class="space-y-1">
         <div class="text-[9px] font-bold" style="color: #67e8f9">① WiFi</div>

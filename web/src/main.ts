@@ -1,4 +1,6 @@
-import { createApp } from "vue";
+import { createApp, h } from "vue";
+import RoomGate from "./components/RoomGate.vue";
+import { roomRole } from "./lib/session";
 import { createRouter, createWebHistory } from "vue-router";
 import "./styles.css";
 import App from "./App.vue";
@@ -37,9 +39,10 @@ const router = createRouter({
 // deep-link could still drop a phone into one of these pages.
 const DESKTOP_ONLY = new Set(["/tv", "/admin", "/library", "/artists"]);
 router.beforeEach((to) => {
+  if (roomRole.value === "guest" && ["/admin", "/library"].includes(to.path)) return "/search";
   if (DESKTOP_ONLY.has(to.path) && !isWideScreen()) {
     return { path: "/search", query: to.query };
   }
 });
 
-createApp(App).use(router).mount("#app");
+createApp({ render: () => h(RoomGate, null, { default: () => h(App) }) }).use(router).mount("#app");

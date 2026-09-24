@@ -27,6 +27,7 @@ import { registerControlRoutes } from "./api/control.ts";
 import { registerAdminRoutes } from "./api/admin.ts";
 import { startQrFloater, type FloaterHandle } from "./qr-floater.ts";
 import { registerWs } from "./ws.ts";
+import { registerRoomAccess } from "./room-access.ts";
 
 async function main() {
   const root = projectRoot();
@@ -62,37 +63,9 @@ async function main() {
     console.log(`[main] backfilled year_int for ${ybf.scanned} songs`);
   }
 
-  // Drop locally-imported songs whose cloud_path doesn't match the current
-  // library_path. This handles the case where the user changed library_path
-  // (e.g. switched from a mapped drive Z: to a UNC path \\nas\share). Without
-  // this, a re-scan of the new path inserts a parallel set of rows and the
-  // catalog ~doubles. Baidu-pulled songs (cloud_path doesn't start with
-  // "local://") and artist_portraits are preserved.
-  {
-    const expectedPrefix =
-      "local://" + config.library_path.replace(/\\/g, "/");
-    const orphanCount = (
-      db
-        .prepare(
-          "SELECT COUNT(*) AS c FROM songs WHERE cloud_path LIKE 'local://%' AND cloud_path NOT LIKE ?",
-        )
-        .get(expectedPrefix + "%") as { c: number }
-    ).c;
-    if (orphanCount > 0) {
-      const res = db
-        .prepare(
-          "DELETE FROM songs WHERE cloud_path LIKE 'local://%' AND cloud_path NOT LIKE ?",
-        )
-        .run(expectedPrefix + "%");
-      console.log(
-        `[main] library_path changed → dropped ${res.changes} stale local songs`,
-      );
-    }
-  }
-
   // --- OpenList subprocess --------------------------------------------------
 
-  const openlistUrl = `http://localhost:${config.openlist.port}`;
+  const openlistUrl = config.openlist.base_url?.replace(/\/$/, "") ?? `http://localhost:${config.openlist.port}`;
   let openlistProc: OpenListProcess | null = null;
   if (config.openlist.auto_spawn) {
     if (existsSync(config.openlist.binary_path)) {
@@ -117,6 +90,8 @@ async function main() {
   const openlist = new OpenListClient({
     baseUrl: openlistUrl,
     token: config.openlist.api_token,
+    username: config.openlist.username,
+    password: config.openlist.password,
   });
 
   // --- QR for the on-TV overlay ---------------------------------------------
@@ -151,7 +126,7 @@ async function main() {
       mkdirSync(dataDir, { recursive: true });
       qrPath = resolve(dataDir, "qr.png");
       const lan = primaryLanIp();
-      const url = `http://${lan ?? "localhost"}:${config.http_port}`;
+      const url = config.room.public_url || `http://${lan ?? "localhost"}:${config.http_port}`;
       const png = await QRCode.toBuffer(url, {
         errorCorrectionLevel: "M",
         margin: 2,
@@ -162,7 +137,7 @@ async function main() {
       console.log(`[main] QR for ${url} written to ${qrPath}`);
 
       // Optional WiFi QR — only if SSID configured.
-      if (config.wifi.ssid) {
+      if (config.wifi.ssid && !config.room.public_url) {
         qrWifiPath = resolve(dataDir, "qr-wifi.png");
         const wifiPng = await QRCode.toBuffer(wifiQrPayload(config.wifi), {
           errorCorrectionLevel: "M",
@@ -270,6 +245,7 @@ async function main() {
     libraryPath: config.library_path,
     concurrency: config.baidu.concurrency,
     requestDelayMs: config.baidu.request_delay_ms,
+    resolveLibraryUrl: (cloudPath) => openlist.playbackUrl(cloudPath.slice("openlist://".length)),
   });
 
   // --- Orchestrator ---------------------------------------------------------
@@ -278,6 +254,7 @@ async function main() {
     prefetchAhead: config.scheduler.prefetch_ahead,
     pollIntervalMs: config.scheduler.poll_interval_ms,
     baiduRoot: config.baidu_root,
+    resolveLibraryUrl: (cloudPath) => openlist.playbackUrl(cloudPath.slice("openlist://".length)),
     resolveOnlineUrl: async (cloudPath: string) => {
       const parsed = parseOnlineCloudPath(cloudPath);
       if (!parsed) throw new Error(`not an online cloud_path: ${cloudPath}`);
@@ -289,7 +266,7 @@ async function main() {
   });
   orchestrator.start();
 
-  const scanner = new Scanner(db, openlist, config.baidu_root);
+  const scanner = new Scanner(db, openlist, config.openlist.root ?? config.baidu_root);
 
   // --- HTTP server ----------------------------------------------------------
 
@@ -302,6 +279,7 @@ async function main() {
       base: undefined,
     },
   });
+  registerRoomAccess(fastify, config.room, config.http_port);
 
   // Be lenient about empty JSON bodies on POST: many of our control endpoints
   // (skip, replay, toggle-vocal, queue/:id/top, import-local) take no payload,
@@ -389,6 +367,7 @@ async function main() {
       security: config.wifi.security,
       hidden: config.wifi.hidden,
     },
+    config.room.public_url,
   );
   await registerWs(fastify, orchestrator, adminEvents, downloads);
 
@@ -405,7 +384,7 @@ async function main() {
       ok: true,
       openlist_up: await openlist.ping(),
       openlist_admin_url: openlistUrl,
-      mpv_ready: !!config.mpv.binary_path || true, // controller warns if unavailable
+      mpv_ready: mpv.isReady(),
       library_path: config.library_path,
       db_songs: songCount,
       db_cached: cachedCount,
@@ -413,7 +392,7 @@ async function main() {
   });
 
   try {
-    await fastify.listen({ port: config.http_port, host: "0.0.0.0" });
+    await fastify.listen({ port: config.http_port, host: config.http_host ?? (config.room.public_url ? "127.0.0.1" : "0.0.0.0") });
     const nets = netIfaces();
     const lan: string[] = [];
     for (const ifaces of Object.values(nets)) {
@@ -425,7 +404,8 @@ async function main() {
     console.log("================================================");
     console.log("  KTV is up.");
     console.log(`    local:       http://localhost:${config.http_port}`);
-    if (lan.length) {
+    if (config.room.public_url) console.log(`    room:        ${config.room.public_url} (HTTPS tunnel required)`);
+    if (lan.length && (config.http_host === "0.0.0.0" || (!config.http_host && !config.room.public_url))) {
       console.log(`    LAN (phone): http://${lan[0]}:${config.http_port}`);
     }
     console.log(`    admin:       http://localhost:${config.http_port}/admin`);
@@ -481,6 +461,7 @@ async function main() {
   const shutdown = async () => {
     console.log("\n[main] shutting down ...");
     orchestrator.stop();
+    downloads.abortAll();
     for (const f of qrFloaters) {
       try {
         f.stop();

@@ -93,6 +93,14 @@ check("mpv reachable", () => {
 });
 
 check("OpenList binary", () => {
+  const configPath = resolve(rootDir, "config.json");
+  if (existsSync(configPath)) {
+    const cfg = JSON.parse(require("node:fs").readFileSync(configPath, "utf8"));
+    if (cfg.openlist?.auto_spawn === false) {
+      info("OpenList binary", "not required with auto_spawn=false; verify source connectivity in the admin page");
+      return;
+    }
+  }
   const name = platform() === "win32" ? "openlist.exe" : "openlist";
   const path = resolve(rootDir, "bin", name);
   if (existsSync(path)) pass("OpenList binary", path);

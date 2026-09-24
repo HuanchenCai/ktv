@@ -26,12 +26,14 @@ export type BaiduScanProgress = {
 };
 
 export type WsMessage =
+  | { type: "player.error"; payload: { song_id: number; message: string } }
   | { type: "queue.updated" }
   | { type: "download.progress"; payload: unknown }
   | { type: "player.state"; payload: unknown }
   | { type: "portrait.progress"; payload: unknown }
   | { type: "scan.progress"; payload: unknown }
   | { type: "import.progress"; payload: unknown }
+  | { type: "organize.progress"; payload: unknown }
   | { type: "baidu-scan.progress"; payload: BaiduScanProgress }
   | { type: "downloads.task"; payload: ManagerTask }
   | {
@@ -69,8 +71,12 @@ function connect() {
       console.error("[ws] parse failed", e);
     }
   };
-  sock.onclose = () => {
+  sock.onclose = async () => {
     wsStatus.value = "closed";
+    try {
+      const session = await fetch("/api/session").then((r) => r.json());
+      if (session.enabled && !session.role) { location.reload(); return; }
+    } catch { /* Offline: reconnect with backoff below. */ }
     const delay = Math.min(10_000, 500 * 2 ** retry);
     retry++;
     setTimeout(connect, delay);

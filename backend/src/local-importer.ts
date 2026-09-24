@@ -43,14 +43,14 @@ export async function importLocalLibrary(
   // stat() on the SMB share for the (overwhelming) common case of "file
   // already in DB". Cheap: ~25k strings is small, the table-scan is one
   // local SQLite query.
-  const known = new Set<string>(
+  const known = new Map<string, { cached: number; local_path: string | null }>(
     (
       db
         .prepare(
-          "SELECT cloud_path FROM songs WHERE cloud_path LIKE 'local://%'",
+          "SELECT cloud_path, cached, local_path FROM songs WHERE cloud_path LIKE 'local://%'",
         )
-        .all() as Array<{ cloud_path: string }>
-    ).map((r) => r.cloud_path),
+        .all() as Array<{ cloud_path: string; cached: number; local_path: string | null }>
+    ).map((r) => [r.cloud_path, { cached: r.cached, local_path: r.local_path }]),
   );
 
   const insert = db.prepare(
@@ -76,7 +76,10 @@ export async function importLocalLibrary(
     let entries: Dirent[] = [];
     try {
       entries = await readdir(dir, { withFileTypes: true });
-    } catch {
+    } catch (err) {
+      if (dir === root) {
+        throw new Error(`Cannot read song folder ${root}: ${err instanceof Error ? err.message : String(err)}`);
+      }
       return;
     }
     for (const ent of entries) {
@@ -88,7 +91,8 @@ export async function importLocalLibrary(
       }
       if (!VIDEO_EXTS.has(extname(name).toLowerCase())) continue;
       const cloudPath = `local://${full.replace(/\\/g, "/")}`;
-      if (known.has(cloudPath)) {
+      const previous = known.get(cloudPath);
+      if (previous?.cached === 1 && previous.local_path === full) {
         // already indexed — don't stat, don't UPSERT
         skipped++;
         scanned++;
@@ -118,7 +122,7 @@ export async function importLocalLibrary(
           full,
           extractYear(title),
         );
-        known.add(cloudPath);
+        known.set(cloudPath, { cached: 1, local_path: full });
         added++;
         if (scanned % 25 === 0) tick("indexing", dirname(full));
       } catch {
@@ -128,7 +132,8 @@ export async function importLocalLibrary(
     }
   }
 
-  await walk(resolve(libraryPath), basename(libraryPath));
+  const root = resolve(libraryPath);
+  await walk(root, basename(root));
   tick("done");
   return { added, skipped, scanned };
 }

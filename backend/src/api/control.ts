@@ -105,10 +105,11 @@ export async function registerControlRoutes(
     },
   );
 
-  fastify.get("/api/player", async () => {
+  fastify.get("/api/player", async (req) => {
     const state = await mpv.getState();
     return {
       ...state,
+      ...(req.roomRole === "guest" ? { current_file: undefined } : {}),
       current_song: orchestrator.getCurrentSong(),
     };
   });

@@ -159,7 +159,7 @@ export class Scanner {
       onProgress?: (p: ScanProgress) => void;
     } = {},
   ): Promise<{ inserted: number; updated: number; skipped: number }> {
-    const maxDepth = options.maxDepth ?? 3;
+    const maxDepth = options.maxDepth ?? 20;
     const progress = options.progress ?? ((m) => console.log(`[scan] ${m}`));
 
     let inserted = 0;
@@ -205,7 +205,7 @@ export class Scanner {
         items = await this.openlist.list(path);
       } catch (err) {
         progress(`list failed at ${path}: ${err}`);
-        return;
+        throw err;
       }
       for (const item of items) {
         const childPath = `${path.replace(/\/$/, "")}/${item.name}`;
@@ -219,7 +219,8 @@ export class Scanner {
           );
           const pinyinInitials = toPinyinInitials(title);
           const artistPinyin = toPinyinInitials(artist);
-          const already = exists.get(childPath);
+          const sourcePath = `openlist://${childPath}`;
+          const already = exists.get(sourcePath);
           insert.run(
             title,
             artist,
@@ -227,7 +228,7 @@ export class Scanner {
             genre,
             pinyinInitials,
             artistPinyin,
-            childPath,
+            sourcePath,
             item.size,
             "L",
             extractYear(title),

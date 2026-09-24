@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { onMounted, computed } from "vue";
+import { onMounted, onUnmounted, computed, ref } from "vue";
 import { useRoute, RouterView, RouterLink } from "vue-router";
-import { startWs, wsStatus } from "./lib/ws";
+import { startWs, wsStatus, onWs } from "./lib/ws";
 import MiniPlayer from "./components/MiniPlayer.vue";
+import { roomRole, roomEnabled, leaveRoom } from "./lib/session";
 
 onMounted(() => startWs());
+const playbackError = ref("");
+const removeErrorListener = onWs((msg) => {
+  if (msg.type === "player.error") playbackError.value = msg.payload.message;
+});
+onUnmounted(removeErrorListener);
 
 const route = useRoute();
 const tab = computed(() => route.path.split("/")[1] ?? "search");
@@ -111,6 +117,7 @@ const wsDotClass = computed(() => ({
           📺 主页
         </RouterLink>
         <RouterLink
+          v-if="roomRole === 'admin'"
           to="/library"
           class="hover:text-white transition-colors px-1.5 py-1 rounded"
           active-class="text-white bg-panel"
@@ -125,6 +132,7 @@ const wsDotClass = computed(() => ({
           👤 歌手
         </RouterLink>
         <RouterLink
+          v-if="roomRole === 'admin'"
           to="/admin"
           class="hover:text-white transition-colors px-1.5 py-1 rounded"
           active-class="text-white bg-panel"
@@ -132,7 +140,13 @@ const wsDotClass = computed(() => ({
           ⚙ 管理
         </RouterLink>
       </nav>
+      <button v-if="roomEnabled" class="text-xs text-muted px-2 py-2" @click="leaveRoom">退出房间</button>
     </header>
+
+    <div v-if="playbackError" role="alert" class="bg-rose-950 text-rose-100 px-4 py-3 text-sm flex justify-between gap-3">
+      <span>{{ playbackError }}</span>
+      <button aria-label="关闭播放提示" @click="playbackError = ''">关闭</button>
+    </div>
 
     <main
       class="flex-1 overflow-y-auto"

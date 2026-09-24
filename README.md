@@ -2,7 +2,7 @@
 
 # 寰宇KTV
 
-**把家庭服务器变成 KTV 包厢**
+**把家庭服务器或随身笔记本变成 KTV 包厢**
 
 为海外华人 homelab 玩家做的自部署 KTV 引擎。
 手机扫码点歌 · 真 MV 跟唱 · 多连接器 · 不订阅 · 不限制 IP
@@ -19,7 +19,7 @@
 ---
 
 > [!NOTE]
-> **这是一个 self-hosted 项目**，不是云服务。你需要一台一直开机的电脑（Mac mini / NUC / 群晖 / 任意 NAS）和一个百度网盘 SVIP（或同等云盘）。如果这些对你不是问题，欢迎继续。
+> **这是一个 self-hosted 项目**，不是托管云服务。播放主机在开唱期间需要开机；歌曲可来自云盘、NAS 或本地文件。也可以带笔记本出门，连接家中 NAS，并让朋友用手机流量点歌，见[便携聚会与远程访问指南](docs/remote-party.md)。
 >
 > 如果你想要"点开就唱"的零配置 SaaS，这个项目不适合你——
 > Apple Music sing-along 是更省事的选择（虽然没 MV）。
@@ -90,7 +90,7 @@
 
 **关键设计：**
 - **单进程**：一个 Node 进程编排所有子进程（OpenList、mpv），不用 Docker compose、不用 PM2
-- **存算分离**：曲库视频在云盘 / NAS，本地只缓存最近播放的（LRU，默认 50GB）
+- **存算分离**：OpenList 曲库只扫描索引，默认流式播放；可手动下载少量歌曲作离线备用，不必复制整库
 - **OpenList 抽象层**：百度盘、阿里云盘、WebDAV、SMB、本地，统一接口
 - **L/R 声道切原伴**：商业 KTV 发行版约定 MV 左声道原唱、右声道伴奏，mpv 实时切
 
@@ -204,7 +204,7 @@ npm start
 - **已点**：队列 + 下载进度 + 置顶/删除
 - **播放**：原唱/伴唱、切歌、重唱、音量
 
-第一次点没缓存的歌，backend 通过 OpenList 从百度盘下载到 `library_path/`，下完自动播。重复点秒播。
+OpenList 扫描的歌曲默认直接流式播放，保留原伴切换；手动下载过的歌曲优先从本地播放。旧的百度 BDUSS 直连索引仍采用下载后播放流程。
 
 ## 🎵 歌从哪来？
 
@@ -271,8 +271,7 @@ License：MIT 或 AGPL-3.0（请到 [Issue #1](https://github.com/HuanchenCai/kt
 <details>
 <summary><b>海外用百度盘速度够吗？</b></summary>
 
-SVIP 在海外典型 1-5 MB/s（看地区和 ISP）。一首 200MB MV 边下边播没问题，30 秒缓冲就能开唱。
-首次下载较慢，但 app 有 LRU 缓存（默认 50GB），常唱的歌只下一次。
+速度取决于地区、运营商、账号和来源，不能保证固定缓冲时间。流式播放要求持续带宽跟得上视频码率；常唱的歌可以提前手动下载。下载目录没有自动 LRU 清理或容量上限，需自行管理空间。
 
 如果你那边百度盘慢得离谱，建议改用阿里云盘或自建 NAS。
 
@@ -365,7 +364,7 @@ npm run typecheck    # TS 类型检查
 
 **HuanyuKTV** is a self-hosted karaoke engine for the overseas Chinese homelab community. Phone-based QR code song requesting, real music videos (not just lyrics), multi-source connector (Baidu Netdisk, NAS, Jellyfin, local files), original/karaoke channel toggle.
 
-This is **not** a SaaS — you need a 7×24 host (Mac mini, NUC, NAS) and your own content source (Baidu Netdisk SVIP recommended for the overseas Chinese audience, or use your own Jellyfin/Emby/SMB).
+This is **not** a SaaS — the playback host must run during the party, and you provide the media source. A travelling laptop can stream an OpenList library from home while guests join through an authenticated HTTPS room. See the [remote party guide](docs/remote-party.md).
 
 We do **not** distribute any copyrighted content. Users source their own media.
 
